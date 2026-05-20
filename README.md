@@ -1,4 +1,4 @@
-# vediogen
+# videogen
 
 A Remotion experiment for generating vertical marketing/poster videos with scrolling typography, a translucent ribbon path, BGM, and palette changes.
 

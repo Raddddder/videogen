@@ -1,10 +1,10 @@
 {
-  "name": "vediogen",
+  "name": "videogen",
   "version": "1.0.0",
   "description": "A Remotion-based generative poster video experiment with scrolling typography, ribbon motion, music, and palette changes.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Raddddder/vediogen.git"
+    "url": "git+https://github.com/Raddddder/videogen.git"
   },
   "license": "MIT",
   "dependencies": {
@@ -41,9 +41,9 @@
   ],
   "author": "Raddddder",
   "bugs": {
-    "url": "https://github.com/Raddddder/vediogen/issues"
+    "url": "https://github.com/Raddddder/videogen/issues"
   },
-  "homepage": "https://github.com/Raddddder/vediogen#readme",
+  "homepage": "https://github.com/Raddddder/videogen#readme",
   "sideEffects": [
     "*.css"
   ]
