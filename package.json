@@ -1,16 +1,19 @@
 {
-  "name": "marketing-ribbon-video",
+  "name": "vediogen",
   "version": "1.0.0",
-  "description": "My Remotion video",
-  "repository": {},
-  "license": "UNLICENSED",
-  "private": true,
+  "description": "A Remotion-based generative poster video experiment with scrolling typography, ribbon motion, music, and palette changes.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Raddddder/vediogen.git"
+  },
+  "license": "MIT",
   "dependencies": {
     "@remotion/cli": "4.0.463",
+    "@remotion/media": "4.0.463",
+    "@remotion/tailwind-v4": "4.0.463",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "remotion": "4.0.463",
-    "@remotion/tailwind-v4": "4.0.463",
     "tailwindcss": "4.0.0"
   },
   "devDependencies": {
@@ -24,9 +27,23 @@
   "scripts": {
     "dev": "remotion studio",
     "build": "remotion bundle",
+    "render": "remotion render MarketingRibbonVideo public/poster-demo.mp4 --codec=h264",
+    "still": "remotion still MarketingRibbonVideo --frame=120 public/preview.png",
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc"
   },
+  "keywords": [
+    "remotion",
+    "video",
+    "generative-design",
+    "motion-graphics",
+    "typography"
+  ],
+  "author": "Raddddder",
+  "bugs": {
+    "url": "https://github.com/Raddddder/vediogen/issues"
+  },
+  "homepage": "https://github.com/Raddddder/vediogen#readme",
   "sideEffects": [
     "*.css"
   ]

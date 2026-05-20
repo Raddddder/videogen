@@ -1,54 +1,67 @@
-# Remotion video
+# vediogen
 
-<p align="center">
-  <a href="https://github.com/remotion-dev/logo">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/remotion-dev/logo/raw/main/animated-logo-banner-dark.apng">
-      <img alt="Animated Remotion Logo" src="https://github.com/remotion-dev/logo/raw/main/animated-logo-banner-light.gif">
-    </picture>
-  </a>
-</p>
+A Remotion experiment for generating vertical marketing/poster videos with scrolling typography, a translucent ribbon path, BGM, and palette changes.
 
-Welcome to your Remotion project!
+## Preview
 
-## Commands
+The main composition is `MarketingRibbonVideo`:
 
-**Install Dependencies**
+- 1080 x 1920
+- 30 fps
+- 18 seconds
+- BGM-driven color scheme changes
+- Horizontal full-screen poster layout scrolling
+- Single animated ribbon with text following the path
 
-```console
-npm i
+## Getting Started
+
+Install dependencies:
+
+```bash
+npm install
 ```
 
-**Start Preview**
+Open Remotion Studio:
 
-```console
+```bash
 npm run dev
 ```
 
-**Render video**
+Render the video:
 
-```console
-npx remotion render
+```bash
+npm run render
 ```
 
-**Upgrade Remotion**
+Render a still frame:
 
-```console
-npx remotion upgrade
+```bash
+npm run still
 ```
 
-## Docs
+Run checks:
 
-Get started with Remotion by reading the [fundamentals page](https://www.remotion.dev/docs/the-fundamentals).
+```bash
+npm run lint
+```
 
-## Help
+## Project Structure
 
-We provide help on our [Discord server](https://discord.gg/6VzzNDwUwV).
+- `src/Composition.tsx` - the video composition, typography layout, ribbon motion, BGM, and palette timing.
+- `src/Root.tsx` - Remotion composition registration.
+- `public/hazy-after-hours.mp3` - demo BGM used by the composition.
+- `public/BGM_SOURCE.txt` - source and license note for the demo BGM.
 
-## Issues
+## BGM
 
-Found an issue with Remotion? [File an issue here](https://github.com/remotion-dev/remotion/issues/new).
+The bundled demo track is "Hazy After Hours" from Mixkit free stock music.
+
+- Source: https://mixkit.co/free-stock-music/tag/fashion/
+- Asset URL: https://assets.mixkit.co/music/132/132.mp3
+- License: https://mixkit.co/license/
+
+The MIT license in this repository applies to the source code. The bundled music remains under Mixkit's license.
 
 ## License
 
-Note that for some entities a company license is needed. [Read the terms here](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md).
+MIT
