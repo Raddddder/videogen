@@ -45,10 +45,10 @@ const statusThemes: Record<SlotStatus, "success" | "warning" | "danger" | "prima
 };
 
 const stageCards = [
-  {id: "A", title: "结构拆解", detail: "样例视频转 Structure DNA"},
-  {id: "B", title: "素材理解", detail: "用户素材转 Material Library"},
-  {id: "C", title: "方案生成", detail: "槽位匹配与缺口补全"},
-  {id: "D", title: "前端演示", detail: "时间线、报告、导出状态"},
+  {id: "A", title: "样例视频解析", detail: "输出 Structure DNA"},
+  {id: "B", title: "用户素材理解", detail: "输出 Material Library"},
+  {id: "C", title: "结构迁移生成", detail: "输出 Edit Plan 与对比报告"},
+  {id: "D", title: "前端展示预览", detail: "展示过程、缺口、结果视频"},
 ];
 
 export function App() {
@@ -161,6 +161,9 @@ export function App() {
           <div>
             <p className="eyebrow">Module D Workspace</p>
             <h1>{activeSession?.targetTitle ?? data.edit_plan.target_title}</h1>
+            <p className="workspace-subtitle">
+              一站式输入样例视频和用户素材，AI 自动捕获结构、素材、缺口和生成方案。
+            </p>
           </div>
           <div className="status-strip" aria-label="槽位状态统计">
             {statusOrder.map((status) => (
@@ -250,8 +253,16 @@ function OverviewView({
         </Card>
 
         <Card bordered className="migration-column script-column">
-          <PanelTitle eyebrow="Analysis 02" title="分析出来的脚本" />
+          <PanelTitle eyebrow="Analysis 02" title="AI 自动捕获" />
           <div className="script-formula">{data.structure_dna.structure_formula}</div>
+          <div className="auto-capture-panel">
+            <b>用户只需要提供</b>
+            <div className="input-chip-row">
+              {(session?.oneStopCapture.userInputs ?? ["样例视频", "用户素材"]).map((input) => (
+                <span key={input}>{input}</span>
+              ))}
+            </div>
+          </div>
           <div className="script-scroll">
             {data.structure_dna.segments.map((segment, index) => (
               <section className="script-beat" key={segment.segment_id}>
@@ -265,7 +276,7 @@ function OverviewView({
             ))}
           </div>
           <div className="creative-note">
-            <b>创意判断</b>
+            <b>AI 捕获后生成的创意判断</b>
             <p>{report?.main_gap ?? "先保留模板结构，再按素材强弱决定补全策略。"}</p>
             <small>{report?.main_fix ?? "用包装、文案卡片或 AIGC 镜头补齐缺口。"}</small>
           </div>
@@ -283,13 +294,24 @@ function OverviewView({
             <p>{data.edit_plan.timeline[0]?.script ?? "等待生成"}</p>
           </PhonePreview>
           <div className="generation-inputs">
-            <b>生成依据</b>
+            <b>README 对应产物</b>
             <div className="input-chip-row">
-              <span>素材 {session?.inputs.materials.length ?? selectedMaterials.length}</span>
-              <span>AIGC 补全 {session?.inputs.aigc.length ?? data.edit_plan.missing_slots.length}</span>
-              <span>脚本 {data.edit_plan.timeline.length}</span>
+              <span>Structure DNA</span>
+              <span>Material Library</span>
+              <span>Edit Plan</span>
             </div>
             <p>{session?.inputs.creativeBrief ?? "根据分析脚本和素材状态生成结果视频。"}</p>
+          </div>
+          <div className="capture-stack">
+            {(session?.oneStopCapture.aiCaptured ?? []).map((capture) => (
+              <section key={capture.module}>
+                <span>{capture.module}</span>
+                <div>
+                  <b>{capture.title}</b>
+                  <small>{capture.output}</small>
+                </div>
+              </section>
+            ))}
           </div>
           <div className="result-stack">
             {data.edit_plan.timeline.map((item) => (
@@ -305,6 +327,9 @@ function OverviewView({
 
       <Card bordered className="panel">
         <PanelTitle eyebrow="Pipeline" title="四段式演示链路" />
+        <p className="pipeline-copy">
+          README 里的 A/B/C/D 模块仍然保留边界；对用户来说是一站式，对系统来说是稳定 JSON 契约逐层传递。
+        </p>
         <div className="stage-strip">
           {stageCards.map((stage) => (
             <article className="stage-card" key={stage.id}>

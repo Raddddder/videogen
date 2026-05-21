@@ -170,6 +170,13 @@ button {
   letter-spacing: 0;
 }
 
+.workspace-subtitle {
+  max-width: 720px;
+  margin: 8px 0 0;
+  color: #667085;
+  line-height: 1.55;
+}
+
 .eyebrow,
 .panel-title span {
   margin: 0 0 6px;
@@ -253,7 +260,7 @@ button {
 
 .script-column .t-card__body {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 14px;
 }
 
@@ -378,6 +385,15 @@ button {
   line-height: 1.45;
 }
 
+.auto-capture-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
 .script-scroll {
   display: grid;
   gap: 10px;
@@ -445,6 +461,46 @@ button {
   line-height: 1.55;
 }
 
+.capture-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.capture-stack section {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.capture-stack section > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: #172033;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.capture-stack b,
+.capture-stack small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capture-stack small {
+  color: #667085;
+}
+
 .input-chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -481,6 +537,12 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pipeline-copy {
+  margin: 12px 0 0;
+  color: #667085;
+  line-height: 1.55;
 }
 
 .metric-grid {
