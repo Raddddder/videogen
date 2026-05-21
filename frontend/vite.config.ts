@@ -7,6 +7,7 @@ export default defineConfig(({mode}) => {
 
   return {
     plugins: [react()],
+    publicDir: "../public",
     server: {
       proxy: {
         "/api": apiBase,
