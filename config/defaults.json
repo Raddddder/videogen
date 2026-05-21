@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "project": {
+    "default_project_id": "case_001",
+    "default_variant": "balanced",
+    "supported_categories": ["product_talk", "knowledge_talk", "mixed_talk"]
+  },
+  "pipeline": {
+    "segment_functions": ["hook", "pain_point", "setup", "solution", "proof", "transition", "cta"],
+    "slot_statuses": ["matched", "weak_match", "missing", "supplemented"],
+    "completion_strategies": ["direct_match", "reorder", "copy", "packaging", "aigc", "reuse"],
+    "scoring_weights": {
+      "shot_type_match": 0.3,
+      "semantic_role_match": 0.3,
+      "emotion_match": 0.15,
+      "duration_match": 0.15,
+      "quality_score": 0.1
+    }
+  },
+  "mock_files": {
+    "structure_dna": "mocks/structure_dna.sample.json",
+    "material_library": "mocks/material_library.sample.json",
+    "edit_plan": "mocks/edit_plan.sample.json",
+    "comparison_report": "mocks/comparison_report.sample.json"
+  },
+  "exports": {
+    "output_dir": "outputs",
+    "preview_video_name": "preview.mp4",
+    "editing_guide_name": "editing_guide.md",
+    "comparison_report_name": "comparison_report.json",
+    "capcut_draft_name": "draft_content.json"
+  },
+  "models": {
+    "primary_provider": "ark",
+    "primary_model": "Doubao-Seed-2.0-lite",
+    "fallback_providers": ["openai", "gemini"],
+    "request_timeout_sec": 60
+  }
+}

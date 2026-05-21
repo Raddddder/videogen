@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "project_id": "case_001",
+  "target": {
+    "title": "新品空气炸锅带货短视频",
+    "category": "product_talk",
+    "selling_points": ["少油", "外酥里嫩", "一键预热", "易清洗"]
+  },
+  "materials": [
+    {
+      "material_id": "mat_001",
+      "type": "video_clip",
+      "file_name": "talking_head_intro.mp4",
+      "duration_sec": 9.5,
+      "aspect_ratio": "9:16",
+      "usable_ranges": [[0.8, 6.2]],
+      "shot_type": "talking_head",
+      "semantic_role": "hook",
+      "tags": ["talking_head", "clear_face", "clear_voice"],
+      "emotion_score": 6,
+      "quality_score": 0.88,
+      "crop_risk": "low",
+      "transcript": "很多人买空气炸锅只看容量，其实第一步就容易错",
+      "key_visuals": ["person", "kitchen", "product_box"]
+    },
+    {
+      "material_id": "mat_002",
+      "type": "video_clip",
+      "file_name": "product_process.mp4",
+      "duration_sec": 14.0,
+      "aspect_ratio": "9:16",
+      "usable_ranges": [[1.0, 11.8]],
+      "shot_type": "product_demo",
+      "semantic_role": "solution",
+      "tags": ["product_demo", "hands", "process", "food_closeup"],
+      "emotion_score": 7,
+      "quality_score": 0.91,
+      "crop_risk": "low",
+      "transcript": "先预热，再把鸡翅平铺进去",
+      "key_visuals": ["air_fryer", "food", "hands"]
+    },
+    {
+      "material_id": "mat_003",
+      "type": "image",
+      "file_name": "product_detail.jpg",
+      "duration_sec": 0.0,
+      "aspect_ratio": "4:5",
+      "usable_ranges": [],
+      "shot_type": "product_close_up",
+      "semantic_role": "solution",
+      "tags": ["product", "detail", "clean_design"],
+      "emotion_score": 5,
+      "quality_score": 0.84,
+      "crop_risk": "medium",
+      "transcript": "",
+      "key_visuals": ["air_fryer", "control_panel"]
+    },
+    {
+      "material_id": "mat_004",
+      "type": "copy",
+      "file_name": "selling_points.txt",
+      "duration_sec": 0.0,
+      "aspect_ratio": "text",
+      "usable_ranges": [],
+      "shot_type": "copy_card",
+      "semantic_role": "proof",
+      "tags": ["proof", "selling_point", "copy"],
+      "emotion_score": 6,
+      "quality_score": 1.0,
+      "crop_risk": "low",
+      "transcript": "少油也能外酥里嫩，预热后口感更稳定",
+      "key_visuals": []
+    },
+    {
+      "material_id": "mat_005",
+      "type": "video_clip",
+      "file_name": "final_cta.mp4",
+      "duration_sec": 7.0,
+      "aspect_ratio": "9:16",
+      "usable_ranges": [[0.4, 6.4]],
+      "shot_type": "talking_head_product_hold",
+      "semantic_role": "cta",
+      "tags": ["cta", "product", "clear_voice", "talking_head"],
+      "emotion_score": 8,
+      "quality_score": 0.86,
+      "crop_risk": "low",
+      "transcript": "想要少踩坑，可以先收藏，链接在下面",
+      "key_visuals": ["person", "air_fryer", "kitchen"]
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/structure_dna.schema.json",
+  "title": "StructureDNA",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "video_id",
+    "source_type",
+    "total_duration_sec",
+    "category",
+    "structure_formula",
+    "basic_info",
+    "segments",
+    "global_features"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "video_id": {
+      "type": "string"
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["uploaded_video", "url", "cached_demo"]
+    },
+    "total_duration_sec": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "category": {
+      "type": "string",
+      "enum": ["product_talk", "knowledge_talk", "mixed_talk"]
+    },
+    "structure_formula": {
+      "type": "string"
+    },
+    "basic_info": {
+      "type": "object",
+      "required": ["width", "height", "fps", "shot_count", "has_speech"],
+      "properties": {
+        "width": {"type": "integer"},
+        "height": {"type": "integer"},
+        "fps": {"type": "number"},
+        "shot_count": {"type": "integer"},
+        "has_speech": {"type": "boolean"},
+        "cover_frame_path": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/segment"
+      }
+    },
+    "global_features": {
+      "type": "object",
+      "required": [
+        "avg_segment_duration_sec",
+        "pacing_pattern",
+        "bgm_style",
+        "overall_emotion_curve"
+      ],
+      "properties": {
+        "avg_segment_duration_sec": {"type": "number"},
+        "pacing_pattern": {"type": "string"},
+        "bgm_style": {"type": "string"},
+        "overall_emotion_curve": {
+          "type": "array",
+          "items": {"type": "number", "minimum": 0, "maximum": 10}
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "segment": {
+      "type": "object",
+      "required": [
+        "segment_id",
+        "function",
+        "time_range",
+        "duration_sec",
+        "duration_ratio",
+        "narrative_technique",
+        "shot_type",
+        "emotion_score",
+        "pacing",
+        "transcript",
+        "text_pattern",
+        "required_material_tags",
+        "packaging"
+      ],
+      "properties": {
+        "segment_id": {"type": "string"},
+        "function": {
+          "type": "string",
+          "enum": ["hook", "pain_point", "setup", "solution", "proof", "transition", "cta"]
+        },
+        "time_range": {
+          "type": "array",
+          "prefixItems": [{"type": "number"}, {"type": "number"}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "duration_sec": {"type": "number", "exclusiveMinimum": 0},
+        "duration_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+        "narrative_technique": {"type": "string"},
+        "shot_type": {"type": "string"},
+        "emotion_score": {"type": "number", "minimum": 0, "maximum": 10},
+        "pacing": {"type": "string", "enum": ["slow", "medium", "fast"]},
+        "transcript": {"type": "string"},
+        "text_pattern": {"type": "string"},
+        "audio_cue": {"type": "string"},
+        "visual_cue": {"type": "string"},
+        "required_material_tags": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "packaging": {
+          "$ref": "#/$defs/packaging"
+        }
+      },
+      "additionalProperties": true
+    },
+    "packaging": {
+      "type": "object",
+      "required": ["subtitle_density", "subtitle_style", "title_bar", "transition", "emphasis_elements"],
+      "properties": {
+        "subtitle_density": {"type": "string", "enum": ["low", "medium", "high"]},
+        "subtitle_style": {"type": "string"},
+        "title_bar": {"type": "string"},
+        "transition": {"type": "string"},
+        "emphasis_elements": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

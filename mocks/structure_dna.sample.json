@@ -1,0 +1,139 @@
+{
+  "schema_version": "1.0",
+  "video_id": "sample_001",
+  "source_type": "cached_demo",
+  "total_duration_sec": 32.0,
+  "category": "product_talk",
+  "structure_formula": "hook -> pain_point -> solution -> proof -> cta",
+  "basic_info": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "shot_count": 7,
+    "has_speech": true,
+    "cover_frame_path": "outputs/sample_001/cover.jpg"
+  },
+  "segments": [
+    {
+      "segment_id": "seg_001",
+      "function": "hook",
+      "time_range": [0.0, 3.2],
+      "duration_sec": 3.2,
+      "duration_ratio": 0.1,
+      "narrative_technique": "counter_intuitive",
+      "shot_type": "talking_head_close_up",
+      "emotion_score": 8,
+      "pacing": "fast",
+      "transcript": "很多人用空气炸锅，第一步就做错了",
+      "text_pattern": "反常识开头",
+      "audio_cue": "beat_rise",
+      "visual_cue": "zoom_in",
+      "required_material_tags": ["talking_head", "high_energy", "clear_face"],
+      "packaging": {
+        "subtitle_density": "high",
+        "subtitle_style": "bold_keyword_highlight",
+        "title_bar": "top_hook_title",
+        "transition": "quick_cut",
+        "emphasis_elements": ["keyword_pop", "zoom_in"]
+      }
+    },
+    {
+      "segment_id": "seg_002",
+      "function": "pain_point",
+      "time_range": [3.2, 8.4],
+      "duration_sec": 5.2,
+      "duration_ratio": 0.1625,
+      "narrative_technique": "mistake_listing",
+      "shot_type": "talking_head_mid_shot",
+      "emotion_score": 6,
+      "pacing": "medium",
+      "transcript": "温度太高，外面焦了里面还没熟",
+      "text_pattern": "问题列举",
+      "audio_cue": "short_pause",
+      "visual_cue": "cutaway",
+      "required_material_tags": ["pain_point", "product_context"],
+      "packaging": {
+        "subtitle_density": "medium",
+        "subtitle_style": "problem_red_highlight",
+        "title_bar": "none",
+        "transition": "hard_cut",
+        "emphasis_elements": ["red_marker"]
+      }
+    },
+    {
+      "segment_id": "seg_003",
+      "function": "solution",
+      "time_range": [8.4, 18.5],
+      "duration_sec": 10.1,
+      "duration_ratio": 0.3156,
+      "narrative_technique": "step_by_step_demo",
+      "shot_type": "product_demo",
+      "emotion_score": 7,
+      "pacing": "medium",
+      "transcript": "先预热三分钟，再把食材平铺进去",
+      "text_pattern": "步骤说明",
+      "audio_cue": "steady_beat",
+      "visual_cue": "product_close_up",
+      "required_material_tags": ["product_demo", "hands", "process"],
+      "packaging": {
+        "subtitle_density": "medium",
+        "subtitle_style": "numbered_steps",
+        "title_bar": "step_card",
+        "transition": "match_cut",
+        "emphasis_elements": ["step_badge", "arrow_label"]
+      }
+    },
+    {
+      "segment_id": "seg_004",
+      "function": "proof",
+      "time_range": [18.5, 26.0],
+      "duration_sec": 7.5,
+      "duration_ratio": 0.2344,
+      "narrative_technique": "before_after_comparison",
+      "shot_type": "comparison_shot",
+      "emotion_score": 7,
+      "pacing": "fast",
+      "transcript": "这样做出来外酥里嫩，口感差很多",
+      "text_pattern": "效果证明",
+      "audio_cue": "beat_drop",
+      "visual_cue": "split_screen",
+      "required_material_tags": ["proof", "comparison", "food_closeup"],
+      "packaging": {
+        "subtitle_density": "medium",
+        "subtitle_style": "result_highlight",
+        "title_bar": "proof_card",
+        "transition": "split_screen",
+        "emphasis_elements": ["before_after_label"]
+      }
+    },
+    {
+      "segment_id": "seg_005",
+      "function": "cta",
+      "time_range": [26.0, 32.0],
+      "duration_sec": 6.0,
+      "duration_ratio": 0.1875,
+      "narrative_technique": "save_and_buy",
+      "shot_type": "talking_head_product_hold",
+      "emotion_score": 9,
+      "pacing": "fast",
+      "transcript": "想少踩坑，先收藏这条，链接我放下面了",
+      "text_pattern": "收藏购买 CTA",
+      "audio_cue": "final_rise",
+      "visual_cue": "product_hold",
+      "required_material_tags": ["cta", "product", "clear_voice"],
+      "packaging": {
+        "subtitle_density": "high",
+        "subtitle_style": "cta_large",
+        "title_bar": "bottom_cta",
+        "transition": "quick_cut",
+        "emphasis_elements": ["button_like_label", "product_sticker"]
+      }
+    }
+  ],
+  "global_features": {
+    "avg_segment_duration_sec": 6.4,
+    "pacing_pattern": "fast_start_slow_middle_fast_end",
+    "bgm_style": "upbeat_electronic",
+    "overall_emotion_curve": [8, 6, 7, 7, 9]
+  }
+}

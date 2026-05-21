@@ -5,11 +5,25 @@
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
-    "lib": ["es2015"],
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2020"
+    ],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "noUnusedLocals": true
+    "noUnusedLocals": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true
   },
-  "exclude": ["remotion.config.ts"]
+  "exclude": [
+    "remotion.config.ts",
+    "frontend",
+    "backend",
+    "node_modules"
+  ],
+  "include": [
+    "src"
+  ]
 }
