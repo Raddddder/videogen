@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.0.0",
-    "typescript": "^5.8.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tdesign-icons-react": "^0.6.4",
+    "tdesign-react": "^1.17.0",
+    "typescript": "^5.8.0",
+    "vite": "^7.0.0"
   },
   "devDependencies": {}
 }
