@@ -1,9 +1,9 @@
-import {useMemo, useState} from "react";
+import {useMemo, useRef, useState} from "react";
 import type {ReactNode} from "react";
 import {Button, Card, Progress, Tag, Tabs} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
-import {runDemoPipeline} from "./api";
+import {runDemoPipeline, uploadSampleVideo} from "./api";
 import {demoSessions} from "./demoSessions";
 import type {DemoSession} from "./demoSessions";
 import {fallbackPipeline} from "./mockState";
@@ -17,6 +17,14 @@ import type {
 } from "./types";
 
 type ViewKey = "overview" | "analysis" | "materials" | "plan";
+
+type SamplePreview = {
+  label: string;
+  videoSrc: string;
+  fileName: string;
+  durationLabel: string;
+  aspectRatio: string;
+};
 
 const functionLabels: Record<SegmentFunction, string> = {
   hook: "开头钩子",
@@ -58,7 +66,10 @@ export function App() {
     fallbackPipeline.edit_plan.timeline[0]?.target_segment_id ?? "",
   );
   const [loading, setLoading] = useState(false);
+  const [sampleUploading, setSampleUploading] = useState(false);
   const [apiState, setApiState] = useState("mock ready");
+  const [uploadedSample, setUploadedSample] = useState<SamplePreview | undefined>();
+  const sampleInputRef = useRef<HTMLInputElement>(null);
 
   const materialById = useMemo(() => {
     return new Map(data.material_library.materials.map((material) => [material.material_id, material]));
@@ -71,6 +82,7 @@ export function App() {
   const totalSourceDuration = data.structure_dna.total_duration_sec;
   const totalTargetDuration = getTimelineDuration(data.edit_plan.timeline);
   const activeSession = demoSessions[0];
+  const currentSample = uploadedSample ?? activeSession?.sample;
   const activeTimelineItem = data.edit_plan.timeline.find((item) => item.target_segment_id === activeSegmentId)
     ?? data.edit_plan.timeline[0];
   const activeSourceSegment = activeTimelineItem ? segmentById.get(activeTimelineItem.segment_id) : undefined;
@@ -109,8 +121,63 @@ export function App() {
     }
   };
 
+  const handleSelectSample = async (file: File) => {
+    const previewUrl = URL.createObjectURL(file);
+    const videoId = buildVideoId(file.name);
+    setSampleUploading(true);
+    setApiState("uploading sample");
+    try {
+      const structureDna = await uploadSampleVideo(file, {
+        projectId: data.edit_plan.project_id || "case_001",
+        videoId,
+      });
+      setData((current) => ({
+        ...current,
+        structure_dna: structureDna,
+        edit_plan: {
+          ...current.edit_plan,
+          source_structure_id: structureDna.video_id,
+        },
+      }));
+      setUploadedSample((previous) => {
+        if (previous?.videoSrc.startsWith("blob:")) {
+          URL.revokeObjectURL(previous.videoSrc);
+        }
+        return {
+          label: "Uploaded",
+          videoSrc: previewUrl,
+          fileName: file.name,
+          durationLabel: `${formatSeconds(structureDna.total_duration_sec)}s`,
+          aspectRatio: structureDna.basic_info
+            ? `${structureDna.basic_info.width} x ${structureDna.basic_info.height}`
+            : "uploaded",
+        };
+      });
+      setApiState("sample analyzed");
+      setActiveView("overview");
+    } catch (error) {
+      URL.revokeObjectURL(previewUrl);
+      setApiState(error instanceof Error ? error.message : "sample upload failed");
+    } finally {
+      setSampleUploading(false);
+    }
+  };
+
   return (
     <main className="app-shell">
+      <input
+        ref={sampleInputRef}
+        accept="video/mp4,video/quicktime,video/webm,.mov,.m4v"
+        className="hidden-file-input"
+        type="file"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file) {
+            void handleSelectSample(file);
+          }
+        }}
+      />
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">D</span>
@@ -178,9 +245,12 @@ export function App() {
           <OverviewView
             data={data}
             session={activeSession}
+            sample={currentSample}
             materialById={materialById}
+            sampleUploading={sampleUploading}
             totalSourceDuration={totalSourceDuration}
             totalTargetDuration={totalTargetDuration}
+            onPickSample={() => sampleInputRef.current?.click()}
           />
         )}
         {activeView === "analysis" && (
@@ -208,15 +278,21 @@ export function App() {
 function OverviewView({
   data,
   session,
+  sample,
   materialById,
+  sampleUploading,
   totalSourceDuration,
   totalTargetDuration,
+  onPickSample,
 }: {
   data: PipelineResult;
   session?: DemoSession;
+  sample?: SamplePreview;
   materialById: Map<string, Material>;
+  sampleUploading: boolean;
   totalSourceDuration: number;
   totalTargetDuration: number;
+  onPickSample: () => void;
 }) {
   const report = data.comparison_report.summary;
   const firstSegment = data.structure_dna.segments[0];
@@ -229,17 +305,23 @@ function OverviewView({
       <section className="migration-board">
         <Card bordered className="migration-column template-column">
           <PanelTitle eyebrow="Input 01" title="上传的模板视频" />
-          <Button block icon={<CloudUploadIcon />} variant="outline">
-            {session?.sample.fileName ?? "上传模板视频"}
+          <Button
+            block
+            icon={<CloudUploadIcon />}
+            loading={sampleUploading}
+            variant="outline"
+            onClick={onPickSample}
+          >
+            {sampleUploading ? "上传分析中..." : sample?.fileName ?? "上传模板视频"}
           </Button>
-          <PhonePreview tone="source" videoSrc={session?.sample.videoSrc}>
-            <div className="phone-badge">{session?.sample.label ?? "Template"}</div>
-            <strong>{session?.sample.fileName ?? data.structure_dna.video_id}</strong>
-            <span>{session?.sample.aspectRatio ?? data.structure_dna.category ?? "product_talk"}</span>
+          <PhonePreview tone="source" videoSrc={sample?.videoSrc}>
+            <div className="phone-badge">{sample?.label ?? "Template"}</div>
+            <strong>{sample?.fileName ?? data.structure_dna.video_id}</strong>
+            <span>{sample?.aspectRatio ?? data.structure_dna.category ?? "product_talk"}</span>
             <p>{firstSegment?.transcript ?? "等待上传模板视频"}</p>
           </PhonePreview>
           <div className="column-metrics">
-            <Info label="模板时长" value={session?.sample.durationLabel ?? `${formatSeconds(totalSourceDuration)}s`} />
+            <Info label="模板时长" value={sample?.durationLabel ?? `${formatSeconds(totalSourceDuration)}s`} />
             <Info label="画面规格" value={data.structure_dna.basic_info ? `${data.structure_dna.basic_info.width} x ${data.structure_dna.basic_info.height}` : "9:16"} />
             <Info label="镜头数量" value={String(data.structure_dna.basic_info?.shot_count ?? data.structure_dna.segments.length)} />
           </div>
@@ -668,4 +750,12 @@ function formatRange(range: [number, number]) {
 
 function formatSeconds(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function buildVideoId(fileName: string) {
+  return fileName
+    .replace(/\.[^/.]+$/, "")
+    .replace(/[^\w-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    || "sample_uploaded";
 }

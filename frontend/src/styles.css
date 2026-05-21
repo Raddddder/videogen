@@ -18,6 +18,10 @@ button {
   font: inherit;
 }
 
+.hidden-file-input {
+  display: none;
+}
+
 .tdesign-view-tabs .t-tabs__content {
   display: none;
 }
