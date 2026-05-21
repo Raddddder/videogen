@@ -1,7 +1,7 @@
 {
   "name": "videogen",
   "version": "1.0.0",
-  "description": "A Remotion-based generative poster video experiment with scrolling typography, ribbon motion, music, and palette changes.",
+  "description": "Viral short-video structure migration engine with FastAPI, React, and Remotion preview rendering.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Raddddder/videogen.git"
@@ -30,14 +30,25 @@
     "render": "remotion render MarketingRibbonVideo public/poster-demo.mp4 --codec=h264",
     "still": "remotion still MarketingRibbonVideo --frame=120 public/preview.png",
     "upgrade": "remotion upgrade",
-    "lint": "eslint src && tsc"
+    "lint": "eslint src && tsc",
+    "backend:dev": "cd backend && uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "validate": "python3 scripts/validate_contracts.py",
+    "demo:pipeline": "python3 scripts/run_demo_pipeline.py",
+    "render:structure": "remotion render StructurePreview public/structure-preview.mp4 --codec=h264",
+    "still:structure": "remotion still StructurePreview --frame=90 public/structure-preview.png"
   },
   "keywords": [
-    "remotion",
-    "video",
+    "ai-video",
+    "fastapi",
     "generative-design",
     "motion-graphics",
-    "typography"
+    "react",
+    "remotion",
+    "short-video",
+    "structure-migration",
+    "typography",
+    "video"
   ],
   "author": "Raddddder",
   "bugs": {

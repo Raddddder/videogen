@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0",
+  "project_id": "case_001",
+  "source_structure_id": "sample_001",
+  "target_title": "新品空气炸锅带货短视频",
+  "variant": "balanced",
+  "overall_score": {
+    "structure_consistency": 0.86,
+    "material_fit": 0.78,
+    "pacing_fit": 0.82
+  },
+  "timeline": [
+    {
+      "segment_id": "seg_001",
+      "target_segment_id": "target_001",
+      "function": "hook",
+      "target_time_range": [0.0, 3.0],
+      "selected_material_id": "mat_001",
+      "source_range": [0.8, 3.8],
+      "slot_status": "weak_match",
+      "gap_reason": "素材情绪强度低于样例 hook，缺少强吸引开头",
+      "completion_strategy": "packaging",
+      "supplement_instruction": "增加顶部标题条和关键词放大动画，用反常识字幕补强吸引力",
+      "script": "很多人买空气炸锅，第一步就错了",
+      "packaging": {
+        "subtitle": "bold_keyword_highlight",
+        "title_bar_text": "第一步就错了",
+        "transition": "quick_cut",
+        "effect": "zoom_in"
+      },
+      "explanation": "保留样例的反常识 hook 结构，用现有口播片段承载主体，并通过包装补足冲击力。"
+    },
+    {
+      "segment_id": "seg_002",
+      "target_segment_id": "target_002",
+      "function": "pain_point",
+      "target_time_range": [3.0, 8.0],
+      "selected_material_id": "mat_001",
+      "source_range": [3.8, 6.2],
+      "slot_status": "matched",
+      "gap_reason": "",
+      "completion_strategy": "direct_match",
+      "supplement_instruction": "",
+      "script": "只看容量不看预热，食材很容易外焦里生",
+      "packaging": {
+        "subtitle": "problem_red_highlight",
+        "title_bar_text": "常见误区",
+        "transition": "hard_cut",
+        "effect": "red_marker"
+      },
+      "explanation": "素材中的口播内容和痛点段落一致，可以直接承接样例的问题列举。"
+    },
+    {
+      "segment_id": "seg_003",
+      "target_segment_id": "target_003",
+      "function": "solution",
+      "target_time_range": [8.0, 18.0],
+      "selected_material_id": "mat_002",
+      "source_range": [1.0, 11.0],
+      "slot_status": "matched",
+      "gap_reason": "",
+      "completion_strategy": "direct_match",
+      "supplement_instruction": "",
+      "script": "先预热三分钟，再把食材平铺进去，热风循环会更均匀",
+      "packaging": {
+        "subtitle": "numbered_steps",
+        "title_bar_text": "正确做法",
+        "transition": "match_cut",
+        "effect": "step_badge"
+      },
+      "explanation": "商品过程镜头完整覆盖 solution 槽位，保留样例中的步骤式表达。"
+    },
+    {
+      "segment_id": "seg_004",
+      "target_segment_id": "target_004",
+      "function": "proof",
+      "target_time_range": [18.0, 25.5],
+      "selected_material_id": "mat_004",
+      "source_range": null,
+      "slot_status": "supplemented",
+      "gap_reason": "缺少真实前后对比镜头",
+      "completion_strategy": "copy",
+      "supplement_instruction": "用卖点卡片和局部放大画面代替真实对比镜头",
+      "script": "预热后口感更稳定，少油也能做出外酥里嫩",
+      "packaging": {
+        "subtitle": "result_highlight",
+        "title_bar_text": "效果证明",
+        "transition": "split_screen",
+        "effect": "before_after_label"
+      },
+      "explanation": "缺少 comparison shot，因此用文案证明和商品特写组合补足证明段。"
+    },
+    {
+      "segment_id": "seg_005",
+      "target_segment_id": "target_005",
+      "function": "cta",
+      "target_time_range": [25.5, 31.5],
+      "selected_material_id": "mat_005",
+      "source_range": [0.4, 6.4],
+      "slot_status": "matched",
+      "gap_reason": "",
+      "completion_strategy": "direct_match",
+      "supplement_instruction": "",
+      "script": "想少踩坑，先收藏这条，链接我放下面了",
+      "packaging": {
+        "subtitle": "cta_large",
+        "title_bar_text": "先收藏再买",
+        "transition": "quick_cut",
+        "effect": "product_sticker"
+      },
+      "explanation": "CTA 素材同时包含人物和商品，适合作为结尾转化段。"
+    }
+  ],
+  "missing_slots": [
+    {
+      "segment_id": "seg_004",
+      "function": "proof",
+      "missing_type": "comparison_shot",
+      "impact": "证明力不足，转化说服力下降",
+      "suggested_fix": "用卖点卡片和商品局部放大替代真实前后对比镜头"
+    }
+  ],
+  "exports": {
+    "editing_guide_path": "outputs/case_001/editing_guide.md",
+    "comparison_report_path": "outputs/case_001/comparison_report.json",
+    "preview_video_path": "outputs/case_001/preview.mp4",
+    "capcut_draft_path": "outputs/case_001/draft_content.json"
+  }
+}

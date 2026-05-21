@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/edit_plan.schema.json",
+  "title": "EditPlan",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "project_id",
+    "source_structure_id",
+    "target_title",
+    "overall_score",
+    "timeline",
+    "missing_slots",
+    "exports"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "project_id": {"type": "string"},
+    "source_structure_id": {"type": "string"},
+    "target_title": {"type": "string"},
+    "variant": {"type": "string", "enum": ["balanced", "high_click", "high_conversion", "fast_pacing", "premium"]},
+    "overall_score": {
+      "type": "object",
+      "required": ["structure_consistency", "material_fit", "pacing_fit"],
+      "properties": {
+        "structure_consistency": {"type": "number", "minimum": 0, "maximum": 1},
+        "material_fit": {"type": "number", "minimum": 0, "maximum": 1},
+        "pacing_fit": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": true
+    },
+    "timeline": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/timeline_item"
+      }
+    },
+    "missing_slots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/missing_slot"
+      }
+    },
+    "exports": {
+      "type": "object",
+      "properties": {
+        "editing_guide_path": {"type": "string"},
+        "comparison_report_path": {"type": "string"},
+        "preview_video_path": {"type": "string"},
+        "capcut_draft_path": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "timeline_item": {
+      "type": "object",
+      "required": [
+        "segment_id",
+        "target_segment_id",
+        "function",
+        "target_time_range",
+        "slot_status",
+        "completion_strategy",
+        "script",
+        "packaging",
+        "explanation"
+      ],
+      "properties": {
+        "segment_id": {"type": "string"},
+        "target_segment_id": {"type": "string"},
+        "function": {
+          "type": "string",
+          "enum": ["hook", "pain_point", "setup", "solution", "proof", "transition", "cta"]
+        },
+        "target_time_range": {
+          "type": "array",
+          "prefixItems": [{"type": "number"}, {"type": "number"}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "selected_material_id": {"type": ["string", "null"]},
+        "source_range": {
+          "type": ["array", "null"],
+          "prefixItems": [{"type": "number"}, {"type": "number"}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "slot_status": {
+          "type": "string",
+          "enum": ["matched", "weak_match", "missing", "supplemented"]
+        },
+        "gap_reason": {"type": "string"},
+        "completion_strategy": {
+          "type": "string",
+          "enum": ["direct_match", "reorder", "copy", "packaging", "aigc", "reuse"]
+        },
+        "supplement_instruction": {"type": "string"},
+        "script": {"type": "string"},
+        "packaging": {
+          "type": "object",
+          "properties": {
+            "subtitle": {"type": "string"},
+            "title_bar_text": {"type": "string"},
+            "transition": {"type": "string"},
+            "effect": {"type": "string"}
+          },
+          "additionalProperties": true
+        },
+        "explanation": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "missing_slot": {
+      "type": "object",
+      "required": ["segment_id", "function", "missing_type", "impact", "suggested_fix"],
+      "properties": {
+        "segment_id": {"type": "string"},
+        "function": {"type": "string"},
+        "missing_type": {"type": "string"},
+        "impact": {"type": "string"},
+        "suggested_fix": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

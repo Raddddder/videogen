@@ -9,3 +9,13 @@ out
 # Rendered previews / exports
 public/poster-demo*.mp4
 public/preview*.png
+# Viral structure migration engine
+backend/.venv/
+backend/__pycache__/
+backend/app/**/__pycache__/
+frontend/node_modules/
+frontend/dist/
+outputs/*
+!outputs/.gitkeep
+public/structure-preview*.png
+public/structure-preview*.mp4

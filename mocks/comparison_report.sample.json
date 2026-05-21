@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "project_id": "case_001",
+  "summary": {
+    "source_formula": "hook -> pain_point -> solution -> proof -> cta",
+    "target_formula": "hook -> pain_point -> solution -> proof -> cta",
+    "main_gap": "proof 段缺少真实对比镜头",
+    "main_fix": "使用卖点卡片、局部放大和结果字幕补足证明力"
+  },
+  "segment_mapping": [
+    {"source_segment_id": "seg_001", "target_segment_id": "target_001", "status": "weak_match"},
+    {"source_segment_id": "seg_002", "target_segment_id": "target_002", "status": "matched"},
+    {"source_segment_id": "seg_003", "target_segment_id": "target_003", "status": "matched"},
+    {"source_segment_id": "seg_004", "target_segment_id": "target_004", "status": "supplemented"},
+    {"source_segment_id": "seg_005", "target_segment_id": "target_005", "status": "matched"}
+  ],
+  "review_notes": [
+    "结构顺序完整保留。",
+    "开头素材情绪偏弱，已通过标题条和关键词动效补强。",
+    "证明段没有真实对比镜头，是当前素材最大缺口。"
+  ]
+}
