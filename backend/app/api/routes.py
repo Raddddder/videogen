@@ -1,6 +1,8 @@
+import shutil
+from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.api.dependencies import (
     build_demo_pipeline,
@@ -11,6 +13,7 @@ from app.api.dependencies import (
     build_structure_analyzer,
 )
 from app.application.pipeline import DemoPipeline
+from app.core.paths import OUTPUTS_DIR
 from app.core.settings import get_settings
 from app.models.contracts import (
     AnalyzeMaterialsRequest,
@@ -33,69 +36,7 @@ from app.services.structure_analyzer import StructureAnalyzer
 router = APIRouter()
 
 
-def demo_target() -> TargetBrief:
-    return TargetBrief(
-        title="新品空气炸锅带货短视频",
-        category="product_talk",
-        selling_points=["少油", "外酥里嫩", "一键预热", "易清洗"],
-    )
-
-
-def execute_material_demo_pipeline(
-    request: MaterialPipelineRequest,
-    structure_analyzer: StructureAnalyzer,
-    material_analyzer: MaterialAnalyzer,
-    plan_generator: PlanGenerator,
-    report_service: ReportService,
-) -> PipelineResult:
-    target = request.target
-    sample_request = AnalyzeSampleRequest(
-        project_id=request.project_id,
-        video_id=request.sample_video_id,
-        use_mock=True,
-    )
-    materials_request = AnalyzeMaterialsRequest(
-        project_id=request.project_id,
-        target=target,
-        material_uris=request.material_uris,
-        use_mock=False,
-    )
-
-    structure_dna = structure_analyzer.analyze(sample_request)
-    material_library = material_analyzer.analyze(materials_request)
-    edit_plan = plan_generator.generate(
-        GeneratePlanRequest(
-            project_id=request.project_id,
-            target_title=target.title,
-            variant=request.variant,
-            use_mock=False,
-        ),
-        structure_dna,
-        material_library,
-    )
-    comparison_report_payload = report_service.comparison_report(edit_plan)
-    return PipelineResult(
-        structure_dna=structure_dna,
-        material_library=material_library,
-        edit_plan=edit_plan,
-        comparison_report=comparison_report_payload,
-    )
-
-
-def load_material_demo_cases(repository: JsonRepository) -> Dict[str, Any]:
-    cases_path = repository.config.get("demo_cases", {}).get(
-        "material_demo_cases",
-        "mocks/material_demo_cases.json",
-    )
-    return repository.load_project_json(cases_path)
-
-
-def find_material_demo_case(repository: JsonRepository, case_id: str) -> MaterialPipelineRequest:
-    payload = load_material_demo_cases(repository)
-    for item in payload.get("cases", []):
-        if item.get("case_id") == case_id:
-            return MaterialPipelineRequest(**item["request"])
-    raise HTTPException(status_code=404, detail=f"Unknown material demo case: {case_id}")
+ALLOWED_SAMPLE_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm"}
 
 
 @router.get("/health")
@@ -120,6 +61,39 @@ def analyze_sample(
     analyzer: StructureAnalyzer = Depends(build_structure_analyzer),
 ) -> StructureDNA:
     return analyzer.analyze(request)
+
+
+@router.post("/api/samples/upload", response_model=StructureDNA)
+def upload_sample(
+    file: UploadFile = File(...),
+    project_id: str = Form("case_001"),
+    video_id: str = Form("sample_uploaded"),
+    analyzer: StructureAnalyzer = Depends(build_structure_analyzer),
+) -> StructureDNA:
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_SAMPLE_SUFFIXES:
+        raise HTTPException(status_code=400, detail=f"Unsupported video suffix: {suffix or 'unknown'}")
+
+    safe_project_id = _safe_path_part(project_id, "case_001")
+    safe_video_id = _safe_path_part(video_id, "sample_uploaded")
+    upload_dir = OUTPUTS_DIR / safe_project_id / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = upload_dir / f"{safe_video_id}{suffix}"
+    with upload_path.open("wb") as output:
+        shutil.copyfileobj(file.file, output)
+
+    request = AnalyzeSampleRequest(
+        project_id=safe_project_id,
+        video_id=safe_video_id,
+        source_uri=str(upload_path),
+        use_mock=False,
+    )
+    return analyzer.analyze(request)
+
+
+def _safe_path_part(value: str, fallback: str) -> str:
+    safe_value = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in value)
+    return safe_value.strip("_") or fallback
 
 
 @router.post("/api/materials/analyze", response_model=MaterialLibrary)
