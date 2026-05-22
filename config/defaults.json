@@ -333,5 +333,8 @@
       "fast_pacing": 0.82,
       "premium": 1.08
     }
+  },
+  "demo_cases": {
+    "material_demo_cases": "mocks/material_demo_cases.json"
   }
 }

@@ -15,6 +15,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "defaults.json"
+DEMO_CASES = ROOT / "mocks" / "material_demo_cases.json"
 
 
 CONTRACTS = {
@@ -123,12 +124,36 @@ def validate_flow(name: str, structure: dict[str, Any], materials: dict[str, Any
     validate_edit_plan(name, structure, materials, edit_plan, config)
 
 
+def validate_demo_cases() -> None:
+    payload = load_json(DEMO_CASES)
+    case_ids: set[str] = set()
+    for item in payload.get("cases", []):
+        case_id = item.get("case_id")
+        if not case_id:
+            raise AssertionError("material demo case missing case_id")
+        if case_id in case_ids:
+            raise AssertionError(f"duplicate material demo case_id: {case_id}")
+        case_ids.add(case_id)
+
+        request = item.get("request", {})
+        target = request.get("target", {})
+        material_uris = request.get("material_uris", [])
+        if not target.get("title"):
+            raise AssertionError(f"{case_id} target.title is required")
+        if not material_uris:
+            raise AssertionError(f"{case_id} must include at least one material uri")
+        if request.get("variant", "balanced") not in load_json(CONFIG)["project"].get("supported_variants", ["balanced", "high_click", "high_conversion", "fast_pacing", "premium"]):
+            raise AssertionError(f"{case_id} has unsupported variant")
+
+
 def main() -> None:
     for name, contract in CONTRACTS.items():
         schema = load_json(contract["schema"])
         payload = load_json(contract["mock"])
         assert schema.get("title"), f"{name} schema must have a title"
         assert_required(name, payload, contract["required"])
+
+    validate_demo_cases()
 
     mock_structure = load_json(CONTRACTS["structure_dna"]["mock"])
     mock_materials = load_json(CONTRACTS["material_library"]["mock"])

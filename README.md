@@ -409,7 +409,22 @@ curl -X POST http://127.0.0.1:8000/api/pipeline/material-demo \
     ],
     "variant": "balanced"
   }'
+
+# 7. 查看内置半真实 demo cases
+curl http://127.0.0.1:8000/api/pipeline/material-demo/cases
+
+# 8. 运行某个内置 case
+curl -X POST http://127.0.0.1:8000/api/pipeline/material-demo/cases/air_fryer_balanced \
+  -H 'Content-Type: application/json'
 ```
+
+内置 case ID：
+
+- `air_fryer_balanced`：空气炸锅素材较完整。
+- `air_fryer_missing_proof`：空气炸锅缺证明素材。
+- `beauty_sunscreen_conversion`：防晒霜高转化带货。
+- `english_course_knowledge`：英语口语课知识转化。
+- `weak_materials_stress_test`：弱素材压力测试。
 
 ## 校验与验收
 

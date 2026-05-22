@@ -96,7 +96,7 @@ class PlanGenerator:
 
             candidate = self._select_candidate(segment, materials.materials, used_counts)
             status, strategy = self._status_and_strategy(segment, candidate)
-            selected_material = candidate.material if candidate else None
+            selected_material = candidate.material if candidate and status != "missing" else None
             if selected_material:
                 used_counts[selected_material.material_id] = used_counts.get(selected_material.material_id, 0) + 1
                 match_scores[segment.segment_id] = candidate
@@ -296,6 +296,12 @@ class PlanGenerator:
         if candidate is None:
             return f"{segment.function} 槽位没有候选素材，保留结构段落并给出补拍/AIGC 补全建议。"
         material = candidate.material
+        if status == "missing":
+            return (
+                f"{segment.function} 槽位没有达标素材；最佳候选是 "
+                f"{material.material_id}({material.file_name})，综合匹配分 {candidate.score:.2f}，"
+                "低于弱匹配阈值，因此不进入正式时间线。"
+            )
         return (
             f"选择 {material.material_id}({material.file_name}) 承接 {segment.function} 段，"
             f"综合匹配分 {candidate.score:.2f}，状态为 {status}，处理策略为 {strategy}。"

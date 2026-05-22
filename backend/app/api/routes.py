@@ -1,9 +1,10 @@
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.dependencies import (
     build_demo_pipeline,
+    build_repository,
     build_material_analyzer,
     build_plan_generator,
     build_report_service,
@@ -22,6 +23,7 @@ from app.models.contracts import (
     StructureDNA,
     TargetBrief,
 )
+from app.services.json_repository import JsonRepository
 from app.services.material_analyzer import MaterialAnalyzer
 from app.services.plan_generator import PlanGenerator
 from app.services.report_service import ReportService
@@ -37,6 +39,63 @@ def demo_target() -> TargetBrief:
         category="product_talk",
         selling_points=["少油", "外酥里嫩", "一键预热", "易清洗"],
     )
+
+
+def execute_material_demo_pipeline(
+    request: MaterialPipelineRequest,
+    structure_analyzer: StructureAnalyzer,
+    material_analyzer: MaterialAnalyzer,
+    plan_generator: PlanGenerator,
+    report_service: ReportService,
+) -> PipelineResult:
+    target = request.target
+    sample_request = AnalyzeSampleRequest(
+        project_id=request.project_id,
+        video_id=request.sample_video_id,
+        use_mock=True,
+    )
+    materials_request = AnalyzeMaterialsRequest(
+        project_id=request.project_id,
+        target=target,
+        material_uris=request.material_uris,
+        use_mock=False,
+    )
+
+    structure_dna = structure_analyzer.analyze(sample_request)
+    material_library = material_analyzer.analyze(materials_request)
+    edit_plan = plan_generator.generate(
+        GeneratePlanRequest(
+            project_id=request.project_id,
+            target_title=target.title,
+            variant=request.variant,
+            use_mock=False,
+        ),
+        structure_dna,
+        material_library,
+    )
+    comparison_report_payload = report_service.comparison_report(edit_plan)
+    return PipelineResult(
+        structure_dna=structure_dna,
+        material_library=material_library,
+        edit_plan=edit_plan,
+        comparison_report=comparison_report_payload,
+    )
+
+
+def load_material_demo_cases(repository: JsonRepository) -> Dict[str, Any]:
+    cases_path = repository.config.get("demo_cases", {}).get(
+        "material_demo_cases",
+        "mocks/material_demo_cases.json",
+    )
+    return repository.load_project_json(cases_path)
+
+
+def find_material_demo_case(repository: JsonRepository, case_id: str) -> MaterialPipelineRequest:
+    payload = load_material_demo_cases(repository)
+    for item in payload.get("cases", []):
+        if item.get("case_id") == case_id:
+            return MaterialPipelineRequest(**item["request"])
+    raise HTTPException(status_code=404, detail=f"Unknown material demo case: {case_id}")
 
 
 @router.get("/health")
@@ -111,35 +170,50 @@ def run_material_demo_pipeline(
     plan_generator: PlanGenerator = Depends(build_plan_generator),
     report_service: ReportService = Depends(build_report_service),
 ) -> PipelineResult:
-    target = request.target
-    sample_request = AnalyzeSampleRequest(
-        project_id=request.project_id,
-        video_id=request.sample_video_id,
-        use_mock=True,
-    )
-    materials_request = AnalyzeMaterialsRequest(
-        project_id=request.project_id,
-        target=target,
-        material_uris=request.material_uris,
-        use_mock=False,
+    return execute_material_demo_pipeline(
+        request,
+        structure_analyzer,
+        material_analyzer,
+        plan_generator,
+        report_service,
     )
 
-    structure_dna = structure_analyzer.analyze(sample_request)
-    material_library = material_analyzer.analyze(materials_request)
-    edit_plan = plan_generator.generate(
-        GeneratePlanRequest(
-            project_id=request.project_id,
-            target_title=target.title,
-            variant=request.variant,
-            use_mock=False,
-        ),
-        structure_dna,
-        material_library,
-    )
-    comparison_report_payload = report_service.comparison_report(edit_plan)
-    return PipelineResult(
-        structure_dna=structure_dna,
-        material_library=material_library,
-        edit_plan=edit_plan,
-        comparison_report=comparison_report_payload,
+
+@router.get("/api/pipeline/material-demo/cases")
+def list_material_demo_cases(
+    repository: JsonRepository = Depends(build_repository),
+) -> Dict[str, Any]:
+    payload = load_material_demo_cases(repository)
+    return {
+        "schema_version": payload.get("schema_version", "1.0"),
+        "cases": [
+            {
+                "case_id": item["case_id"],
+                "title": item["title"],
+                "description": item["description"],
+                "target": item["request"]["target"],
+                "material_uris": item["request"].get("material_uris", []),
+                "variant": item["request"].get("variant", "balanced"),
+            }
+            for item in payload.get("cases", [])
+        ],
+    }
+
+
+@router.post("/api/pipeline/material-demo/cases/{case_id}", response_model=PipelineResult)
+def run_material_demo_case(
+    case_id: str,
+    repository: JsonRepository = Depends(build_repository),
+    structure_analyzer: StructureAnalyzer = Depends(build_structure_analyzer),
+    material_analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
+    plan_generator: PlanGenerator = Depends(build_plan_generator),
+    report_service: ReportService = Depends(build_report_service),
+) -> PipelineResult:
+    request = find_material_demo_case(repository, case_id)
+    return execute_material_demo_pipeline(
+        request,
+        structure_analyzer,
+        material_analyzer,
+        plan_generator,
+        report_service,
     )
