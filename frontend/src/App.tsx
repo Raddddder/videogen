@@ -324,7 +324,8 @@ export function App() {
             sampleUploading={sampleUploading}
             totalSourceDuration={totalSourceDuration}
             totalTargetDuration={totalTargetDuration}
-            onDraftChange={(field, value) => setDraft((current) => ({...current, [field]: value}))}
+            onOpenMaterials={() => setActiveView("materials")}
+            onOpenPlan={() => setActiveView("plan")}
             onPickSample={() => sampleInputRef.current?.click()}
           />
         )}
@@ -367,7 +368,8 @@ function OverviewView({
   sampleUploading,
   totalSourceDuration,
   totalTargetDuration,
-  onDraftChange,
+  onOpenMaterials,
+  onOpenPlan,
   onPickSample,
 }: {
   data: PipelineResult;
@@ -381,7 +383,8 @@ function OverviewView({
   sampleUploading: boolean;
   totalSourceDuration: number;
   totalTargetDuration: number;
-  onDraftChange: (field: keyof WorkbenchDraft, value: string | number) => void;
+  onOpenMaterials: () => void;
+  onOpenPlan: () => void;
   onPickSample: () => void;
 }) {
   const report = data.comparison_report.summary;
@@ -389,48 +392,70 @@ function OverviewView({
   const selectedMaterials = data.edit_plan.timeline
     .map((item) => item.selected_material_id ? materialById.get(item.selected_material_id) : undefined)
     .filter((material): material is Material => Boolean(material));
+  const sellingPoints = draft.sellingPoints.split(/[、,，]/).map((item) => item.trim()).filter(Boolean).slice(0, 3);
+  const firstGap = data.edit_plan.missing_slots[0];
 
   return (
-    <div className="view-stack">
-      <Card bordered className="panel">
-        <PanelTitle eyebrow="One-stop Input" title="用户素材与商品信息" />
-        <div className="input-board">
-          <label className="field-stack">
-            <span>商品 / 主题</span>
-            <Input
-              clearable
-              value={draft.productTitle}
-              onChange={(value) => onDraftChange("productTitle", String(value))}
-            />
-          </label>
-          <label className="field-stack">
-            <span>核心卖点</span>
-            <Textarea
-              autosize={{minRows: 3, maxRows: 4}}
-              value={draft.sellingPoints}
-              onChange={(value) => onDraftChange("sellingPoints", value)}
-            />
-          </label>
-          <label className="field-stack">
-            <span>当前素材状态</span>
-            <Textarea
-              autosize={{minRows: 3, maxRows: 4}}
-              value={draft.materialBrief}
-              onChange={(value) => onDraftChange("materialBrief", value)}
-            />
-          </label>
-          <div className="capture-summary">
-            <b>AI 需要自己捕获</b>
-            <div className="input-chip-row">
-              {(session?.oneStopCapture.aiCaptured ?? []).flatMap((capture) => capture.dimensions.slice(0, 2)).map((item) => (
-                <span key={item}>{item}</span>
-              ))}
+    <div className="overview-dashboard">
+      <section className="pipeline-rail" aria-label="pipeline">
+        {stageCards.map((stage, index) => (
+          <article className="pipeline-step" key={stage.id}>
+            <span>{stage.id}</span>
+            <div>
+              <b>{stage.title}</b>
+              <small>{stage.detail}</small>
             </div>
-          </div>
-        </div>
-      </Card>
+            {index < stageCards.length - 1 && <i aria-hidden="true">→</i>}
+          </article>
+        ))}
+      </section>
 
-      <section className="migration-board">
+      <section className="control-dock" aria-label="主功能摘要">
+        <article className="control-card">
+          <span>用户输入</span>
+          <b>{targetTitle}</b>
+          <div className="input-chip-row">
+            {sellingPoints.map((point) => <span key={point}>{point}</span>)}
+          </div>
+          <small>{draft.materialBrief}</small>
+          <Button size="small" variant="outline" onClick={onOpenPlan}>编辑参数</Button>
+        </article>
+
+        <article className="control-card">
+          <span>生成版本</span>
+          <b>{activeVariant.label}</b>
+          <small>{activeVariant.focus}</small>
+          <div className="input-chip-row">
+            <span>{activeVariant.pacing}</span>
+            <span>{activeVariant.packaging}</span>
+          </div>
+          <Button size="small" variant="outline" onClick={onOpenPlan}>切换版本</Button>
+        </article>
+
+        <article className="control-card">
+          <span>人工可调</span>
+          <b>{draft.hookRewrite}</b>
+          <small>{draft.ctaText}</small>
+          <div className="compact-meter">
+            <span>节奏 {draft.pacingIntensity}</span>
+            <Progress color="#2563eb" label={false} percentage={draft.pacingIntensity} size="small" theme="line" />
+          </div>
+          <Button size="small" variant="outline" onClick={onOpenPlan}>打开调整</Button>
+        </article>
+
+        <article className="control-card">
+          <span>素材缺口</span>
+          <b>{firstGap ? firstGap.function : "槽位已覆盖"}</b>
+          <small>{firstGap ? firstGap.suggested_fix : "当前素材可以支撑主要结构"}</small>
+          <div className="input-chip-row">
+            <span>已选 {selectedMaterials.length}</span>
+            <span>{formatSeconds(totalTargetDuration)}s</span>
+          </div>
+          <Button size="small" variant="outline" onClick={onOpenMaterials}>查看素材</Button>
+        </article>
+      </section>
+
+      <section className="migration-board overview-board">
         <Card bordered className="migration-column template-column">
           <PanelTitle eyebrow="Input 01" title="上传的模板视频" />
           <Button
@@ -474,7 +499,7 @@ function OverviewView({
             </div>
           </div>
           <div className="script-scroll">
-            {data.structure_dna.segments.map((segment, index) => (
+            {data.structure_dna.segments.slice(0, 4).map((segment, index) => (
               <section className="script-beat" key={segment.segment_id}>
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 <div>
@@ -488,7 +513,6 @@ function OverviewView({
           <div className="creative-note">
             <b>AI 捕获后生成的创意判断</b>
             <p>{report?.main_gap ?? "先保留模板结构，再按素材强弱决定补全策略。"}</p>
-            <small>{report?.main_fix ?? "用包装、文案卡片或 AIGC 镜头补齐缺口。"}</small>
           </div>
         </Card>
 
@@ -512,19 +536,8 @@ function OverviewView({
             </div>
             <p>{session?.inputs.creativeBrief ?? "根据分析脚本和素材状态生成结果视频。"}</p>
           </div>
-          <div className="capture-stack">
-            {(session?.oneStopCapture.aiCaptured ?? []).map((capture) => (
-              <section key={capture.module}>
-                <span>{capture.module}</span>
-                <div>
-                  <b>{capture.title}</b>
-                  <small>{capture.output}</small>
-                </div>
-              </section>
-            ))}
-          </div>
           <div className="result-stack">
-            {data.edit_plan.timeline.map((item) => (
+            {data.edit_plan.timeline.slice(0, 4).map((item) => (
               <section key={item.target_segment_id}>
                 <span className={`status-dot ${item.slot_status}`} />
                 <b>{functionLabels[item.function]}</b>
@@ -534,22 +547,6 @@ function OverviewView({
           </div>
         </Card>
       </section>
-
-      <Card bordered className="panel">
-        <PanelTitle eyebrow="Pipeline" title="四段式演示链路" />
-        <p className="pipeline-copy">
-          README 里的 A/B/C/D 模块仍然保留边界；对用户来说是一站式，对系统来说是稳定 JSON 契约逐层传递。
-        </p>
-        <div className="stage-strip">
-          {stageCards.map((stage) => (
-            <article className="stage-card" key={stage.id}>
-              <span>{stage.id}</span>
-              <b>{stage.title}</b>
-              <small>{stage.detail}</small>
-            </article>
-          ))}
-        </div>
-      </Card>
     </div>
   );
 }
