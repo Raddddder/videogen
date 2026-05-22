@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-"""Generate local demo artifacts from mock contracts."""
+"""Generate local demo artifacts by running the application pipeline."""
 
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MOCKS = ROOT / "mocks"
 OUTPUT = ROOT / "outputs" / "case_001"
+sys.path.insert(0, str(ROOT / "backend"))
 
-
-def load_json(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as file:
-        return json.load(file)
+from app.application.pipeline import DemoPipeline  # noqa: E402
+from app.core.settings import get_settings  # noqa: E402
+from app.models.contracts import AnalyzeMaterialsRequest, AnalyzeSampleRequest, GeneratePlanRequest, TargetBrief  # noqa: E402
+from app.services.json_repository import JsonRepository  # noqa: E402
+from app.services.material_analyzer import MaterialAnalyzer  # noqa: E402
+from app.services.plan_generator import PlanGenerator  # noqa: E402
+from app.services.report_service import ReportService  # noqa: E402
+from app.services.structure_analyzer import StructureAnalyzer  # noqa: E402
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -24,43 +29,33 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
         json.dump(payload, file, ensure_ascii=False, indent=2)
 
 
-def build_guide(edit_plan: dict[str, Any]) -> str:
-    lines = [
-        f"# {edit_plan['target_title']}",
-        "",
-        "## 评分",
-        f"- 结构一致性：{edit_plan['overall_score']['structure_consistency']:.0%}",
-        f"- 素材匹配度：{edit_plan['overall_score']['material_fit']:.0%}",
-        f"- 节奏匹配度：{edit_plan['overall_score']['pacing_fit']:.0%}",
-        "",
-        "## 时间线",
-    ]
-    for item in edit_plan["timeline"]:
-        start, end = item["target_time_range"]
-        lines.extend(
-            [
-                "",
-                f"### {item['function']} [{start:.1f}s - {end:.1f}s]",
-                f"- 文案：{item['script']}",
-                f"- 状态：{item['slot_status']}",
-                f"- 策略：{item['completion_strategy']}",
-                f"- 说明：{item['explanation']}",
-            ]
-        )
-    return "\n".join(lines) + "\n"
-
-
 def main() -> None:
-    structure = load_json(MOCKS / "structure_dna.sample.json")
-    materials = load_json(MOCKS / "material_library.sample.json")
-    edit_plan = load_json(MOCKS / "edit_plan.sample.json")
-    report = load_json(MOCKS / "comparison_report.sample.json")
+    settings = get_settings()
+    repository = JsonRepository(settings.config)
+    report_service = ReportService(repository)
+    pipeline = DemoPipeline(
+        structure_analyzer=StructureAnalyzer(repository),
+        material_analyzer=MaterialAnalyzer(repository),
+        plan_generator=PlanGenerator(repository),
+        report_service=report_service,
+    )
 
-    write_json(OUTPUT / "structure_dna.json", structure)
-    write_json(OUTPUT / "material_library.json", materials)
-    write_json(OUTPUT / "edit_plan.json", edit_plan)
-    write_json(OUTPUT / "comparison_report.json", report)
-    (OUTPUT / "editing_guide.md").write_text(build_guide(edit_plan), encoding="utf-8")
+    target = TargetBrief(
+        title="新品空气炸锅带货短视频",
+        category="product_talk",
+        selling_points=["少油", "外酥里嫩", "一键预热", "易清洗"],
+    )
+    result = pipeline.run(
+        AnalyzeSampleRequest(project_id="case_001", video_id="sample_001", use_mock=True),
+        AnalyzeMaterialsRequest(project_id="case_001", target=target, use_mock=True),
+        GeneratePlanRequest(project_id="case_001", target_title=target.title, variant="balanced", use_mock=True),
+    )
+
+    write_json(OUTPUT / "structure_dna.json", result.structure_dna.model_dump(mode="json"))
+    write_json(OUTPUT / "material_library.json", result.material_library.model_dump(mode="json"))
+    write_json(OUTPUT / "edit_plan.json", result.edit_plan.model_dump(mode="json"))
+    write_json(OUTPUT / "comparison_report.json", result.comparison_report)
+    (OUTPUT / "editing_guide.md").write_text(report_service.editing_guide_markdown(result.edit_plan), encoding="utf-8")
 
     print(f"Demo artifacts written to {OUTPUT}")
 

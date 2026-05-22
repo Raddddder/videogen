@@ -14,6 +14,8 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CONFIG = ROOT / "config" / "defaults.json"
+DEMO_CASES = ROOT / "mocks" / "material_demo_cases.json"
 
 
 CONTRACTS = {
@@ -33,6 +35,21 @@ CONTRACTS = {
         "required": ["schema_version", "project_id", "timeline", "missing_slots", "exports"],
     },
 }
+
+MATERIAL_REQUIRED = [
+    "material_id",
+    "type",
+    "file_name",
+    "duration_sec",
+    "aspect_ratio",
+    "usable_ranges",
+    "shot_type",
+    "semantic_role",
+    "tags",
+    "emotion_score",
+    "quality_score",
+    "crop_risk",
+]
 
 
 def load_json(path: Path) -> Any:
@@ -57,6 +74,78 @@ def assert_increasing_ranges(name: str, items: list[dict[str, Any]], key: str) -
         previous_end = end
 
 
+def validate_material_library(name: str, payload: dict[str, Any]) -> None:
+    for material in payload["materials"]:
+        assert_required(f"{name}.{material.get('material_id', '<unknown>')}", material, MATERIAL_REQUIRED)
+        if not 0 <= material["quality_score"] <= 1:
+            raise AssertionError(f"{name} material quality out of range: {material}")
+        if not 0 <= material["emotion_score"] <= 10:
+            raise AssertionError(f"{name} material emotion out of range: {material}")
+        for start, end in material["usable_ranges"]:
+            if end <= start:
+                raise AssertionError(f"{name} material has invalid usable range: {material}")
+
+
+def validate_edit_plan(
+    name: str,
+    structure: dict[str, Any],
+    materials: dict[str, Any],
+    edit_plan: dict[str, Any],
+    config: dict[str, Any],
+) -> None:
+    assert_increasing_ranges(f"{name}.edit_plan.timeline", edit_plan["timeline"], "target_time_range")
+
+    segment_ids = {segment["segment_id"] for segment in structure["segments"]}
+    mapped_ids = {item["segment_id"] for item in edit_plan["timeline"]}
+    missing_mappings = segment_ids - mapped_ids
+    if missing_mappings:
+        raise AssertionError(f"{name} edit_plan missing mappings for: {sorted(missing_mappings)}")
+
+    material_ids = {material["material_id"] for material in materials["materials"]}
+    slot_statuses = set(config["pipeline"]["slot_statuses"])
+    completion_strategies = set(config["pipeline"]["completion_strategies"])
+
+    for item in edit_plan["timeline"]:
+        if item["slot_status"] not in slot_statuses:
+            raise AssertionError(f"{name} invalid slot_status: {item}")
+        if item["completion_strategy"] not in completion_strategies:
+            raise AssertionError(f"{name} invalid completion_strategy: {item}")
+        selected_material_id = item.get("selected_material_id")
+        if item["slot_status"] != "missing" and selected_material_id not in material_ids:
+            raise AssertionError(f"{name} timeline references unknown material: {item}")
+        if item["slot_status"] in {"weak_match", "missing", "supplemented"} and not item.get("supplement_instruction"):
+            raise AssertionError(f"{name} gap item must include supplement_instruction: {item}")
+
+
+def validate_flow(name: str, structure: dict[str, Any], materials: dict[str, Any], edit_plan: dict[str, Any]) -> None:
+    config = load_json(CONFIG)
+    assert_increasing_ranges(f"{name}.structure_dna.segments", structure["segments"], "time_range")
+    validate_material_library(f"{name}.material_library", materials)
+    validate_edit_plan(name, structure, materials, edit_plan, config)
+
+
+def validate_demo_cases() -> None:
+    payload = load_json(DEMO_CASES)
+    case_ids: set[str] = set()
+    for item in payload.get("cases", []):
+        case_id = item.get("case_id")
+        if not case_id:
+            raise AssertionError("material demo case missing case_id")
+        if case_id in case_ids:
+            raise AssertionError(f"duplicate material demo case_id: {case_id}")
+        case_ids.add(case_id)
+
+        request = item.get("request", {})
+        target = request.get("target", {})
+        material_uris = request.get("material_uris", [])
+        if not target.get("title"):
+            raise AssertionError(f"{case_id} target.title is required")
+        if not material_uris:
+            raise AssertionError(f"{case_id} must include at least one material uri")
+        if request.get("variant", "balanced") not in load_json(CONFIG)["project"].get("supported_variants", ["balanced", "high_click", "high_conversion", "fast_pacing", "premium"]):
+            raise AssertionError(f"{case_id} has unsupported variant")
+
+
 def main() -> None:
     for name, contract in CONTRACTS.items():
         schema = load_json(contract["schema"])
@@ -64,16 +153,26 @@ def main() -> None:
         assert schema.get("title"), f"{name} schema must have a title"
         assert_required(name, payload, contract["required"])
 
-    structure = load_json(CONTRACTS["structure_dna"]["mock"])
-    edit_plan = load_json(CONTRACTS["edit_plan"]["mock"])
-    assert_increasing_ranges("structure_dna.segments", structure["segments"], "time_range")
-    assert_increasing_ranges("edit_plan.timeline", edit_plan["timeline"], "target_time_range")
+    validate_demo_cases()
 
-    segment_ids = {segment["segment_id"] for segment in structure["segments"]}
-    mapped_ids = {item["segment_id"] for item in edit_plan["timeline"]}
-    missing_mappings = segment_ids - mapped_ids
-    if missing_mappings:
-        raise AssertionError(f"edit_plan missing mappings for: {sorted(missing_mappings)}")
+    mock_structure = load_json(CONTRACTS["structure_dna"]["mock"])
+    mock_materials = load_json(CONTRACTS["material_library"]["mock"])
+    mock_edit_plan = load_json(CONTRACTS["edit_plan"]["mock"])
+    validate_flow("mocks", mock_structure, mock_materials, mock_edit_plan)
+
+    output_dir = ROOT / "outputs" / "case_001"
+    output_paths = [
+        output_dir / "structure_dna.json",
+        output_dir / "material_library.json",
+        output_dir / "edit_plan.json",
+    ]
+    if all(path.exists() for path in output_paths):
+        validate_flow(
+            "outputs/case_001",
+            load_json(output_paths[0]),
+            load_json(output_paths[1]),
+            load_json(output_paths[2]),
+        )
 
     print("Contract validation passed.")
 

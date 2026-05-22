@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.api.dependencies import (
     build_demo_pipeline,
+    build_repository,
     build_material_analyzer,
     build_plan_generator,
     build_report_service,
@@ -20,9 +21,12 @@ from app.models.contracts import (
     EditPlan,
     GeneratePlanRequest,
     MaterialLibrary,
+    MaterialPipelineRequest,
     PipelineResult,
     StructureDNA,
+    TargetBrief,
 )
+from app.services.json_repository import JsonRepository
 from app.services.material_analyzer import MaterialAnalyzer
 from app.services.plan_generator import PlanGenerator
 from app.services.report_service import ReportService
@@ -120,7 +124,70 @@ def comparison_report(
 def run_demo_pipeline(
     pipeline: DemoPipeline = Depends(build_demo_pipeline),
 ) -> PipelineResult:
-    sample_request = AnalyzeSampleRequest()
-    materials_request = AnalyzeMaterialsRequest()
-    plan_request = GeneratePlanRequest()
+    target = demo_target()
+    sample_request = AnalyzeSampleRequest(project_id="case_001", video_id="sample_001", use_mock=True)
+    materials_request = AnalyzeMaterialsRequest(project_id="case_001", target=target, use_mock=True)
+    plan_request = GeneratePlanRequest(
+        project_id="case_001",
+        target_title=target.title,
+        variant="balanced",
+        use_mock=True,
+    )
     return pipeline.run(sample_request, materials_request, plan_request)
+
+
+@router.post("/api/pipeline/material-demo", response_model=PipelineResult)
+def run_material_demo_pipeline(
+    request: MaterialPipelineRequest,
+    structure_analyzer: StructureAnalyzer = Depends(build_structure_analyzer),
+    material_analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
+    plan_generator: PlanGenerator = Depends(build_plan_generator),
+    report_service: ReportService = Depends(build_report_service),
+) -> PipelineResult:
+    return execute_material_demo_pipeline(
+        request,
+        structure_analyzer,
+        material_analyzer,
+        plan_generator,
+        report_service,
+    )
+
+
+@router.get("/api/pipeline/material-demo/cases")
+def list_material_demo_cases(
+    repository: JsonRepository = Depends(build_repository),
+) -> Dict[str, Any]:
+    payload = load_material_demo_cases(repository)
+    return {
+        "schema_version": payload.get("schema_version", "1.0"),
+        "cases": [
+            {
+                "case_id": item["case_id"],
+                "title": item["title"],
+                "description": item["description"],
+                "target": item["request"]["target"],
+                "material_uris": item["request"].get("material_uris", []),
+                "variant": item["request"].get("variant", "balanced"),
+            }
+            for item in payload.get("cases", [])
+        ],
+    }
+
+
+@router.post("/api/pipeline/material-demo/cases/{case_id}", response_model=PipelineResult)
+def run_material_demo_case(
+    case_id: str,
+    repository: JsonRepository = Depends(build_repository),
+    structure_analyzer: StructureAnalyzer = Depends(build_structure_analyzer),
+    material_analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
+    plan_generator: PlanGenerator = Depends(build_plan_generator),
+    report_service: ReportService = Depends(build_report_service),
+) -> PipelineResult:
+    request = find_material_demo_case(repository, case_id)
+    return execute_material_demo_pipeline(
+        request,
+        structure_analyzer,
+        material_analyzer,
+        plan_generator,
+        report_service,
+    )

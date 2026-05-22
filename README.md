@@ -8,6 +8,33 @@
 - 吴隆正：模块 B/C，素材理解、缺口识别、方案生成、预览/导出。
 - 管振凯：模块 D，前端产品、结构可视化、演示链路。
 
+## 比赛阶段 TODO
+
+服务器部署先不作为当前比赛交付项。当前阶段的目标是把本地 demo 链路跑稳，并把未来上线需要的 Docker、环境变量和部署文档保留下来。
+
+当前策略：
+
+- 本地 FastAPI 跑 mock/半真实 pipeline；需要公网演示时，用 Cloudflare Tunnel 或 cpolar 临时暴露 `8000`。
+- 不购买云服务器，不处理 Render 绑卡，不做 ICP 备案，不把域名和 HTTPS 作为比赛前置条件。
+- 已保留 `backend/Dockerfile`、`.dockerignore`、`docs/deployment.md`，后续可以迁移到 Render、ECS、K8s 或校内服务器。
+- 正式上线再补：文件对象存储、异步任务队列、生产 CORS 域名、ASR/LLM provider key、域名/HTTPS、日志和监控。
+
+### 吴隆正 / wulongzheng 待办
+
+| 优先级 | 工作项 | 输入 | 输出 | 验收标准 |
+| --- | --- | --- | --- | --- |
+| P0 | 跑稳当前 demo 闭环 | `mocks/*.sample.json`、`config/defaults.json` | `outputs/case_001/*.json`、`editing_guide.md` | `python3 scripts/validate_contracts.py` 和 `python3 scripts/run_demo_pipeline.py` 通过 |
+| P0 | Module B 素材理解规则落地 | 用户素材路径/URL、`TargetBrief` | `MaterialLibrary` | 每个素材有 `semantic_role`、`tags`、`usable_ranges`、`quality_score`、`crop_risk` |
+| P0 | Module C 槽位匹配引擎 | `StructureDNA`、`MaterialLibrary`、`config/defaults.json` 权重 | `EditPlan.timeline[]` | 每个结构段都有匹配结果，`slot_status` 只能来自 schema 枚举 |
+| P0 | 缺口识别与补全策略 | `weak_match` / `missing` 槽位 | `missing_slots[]`、`completion_strategy`、`supplement_instruction` | 能解释为什么缺、怎么补、补完对结构有什么影响 |
+| P1 | 对比报告和剪辑指导完善 | `EditPlan` | `comparison_report.json`、`editing_guide.md` | 前端能直接展示，评委能看懂每段为什么这么剪 |
+| P1 | provider 配置抽象 | `.env`、`config/defaults.json` | mock/真实 ASR、LLM 可切换的服务接口 | key 不进代码，业务层不直接读环境变量 |
+| P1 | 本地公网演示方案 | 本地 `8000` 服务、Cloudflare Tunnel/cpolar | 临时公网 API URL | 本地前端设置 `VITE_API_BASE_URL` 后能打到公网 URL |
+| P2 | 真实上传和 job API | 视频/图片/文案文件 | `job_id`、任务状态、产物路径 | 后续线上部署时可异步处理，不阻塞 HTTP 请求 |
+| P2 | 正式服务器部署 | Docker image、环境变量、provider key | 公网 `/health`、线上 API base URL | 前端可从本地或线上访问正式后端 |
+
+边界说明：Module A 的真实 ASR、镜头切分和 `StructureDNA` 生成主要由张旭宏负责；吴隆正这里优先保证能稳定消费 `StructureDNA`，并把素材理解、槽位匹配、缺口补全和方案输出做扎实。
+
 ## 一句话流程
 
 ```text
@@ -413,9 +440,43 @@ curl -X POST http://127.0.0.1:8000/api/materials/analyze   -H 'Content-Type: app
 # 4. 方案生成
 curl -X POST http://127.0.0.1:8000/api/plans/generate   -H 'Content-Type: application/json'   -d '{"project_id":"case_001","target_title":"新品空气炸锅带货短视频","variant":"balanced","use_mock":true}'
 
-# 5. 一键 demo 管线
+# 5. 一键固定 demo 管线
 curl -X POST http://127.0.0.1:8000/api/pipeline/demo   -H 'Content-Type: application/json'
+
+# 6. 半真实素材输入 demo
+curl -X POST http://127.0.0.1:8000/api/pipeline/material-demo \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "project_id": "case_real_001",
+    "target": {
+      "title": "空气炸锅带货短视频",
+      "category": "product_talk",
+      "selling_points": ["少油", "外酥里嫩"]
+    },
+    "material_uris": [
+      "assets/hook_talking_head_9x16_5s.mp4",
+      "assets/product_demo_process_12s.mp4",
+      "assets/proof_before_after_food_4x5.jpg",
+      "assets/final_cta_link_6s.mov"
+    ],
+    "variant": "balanced"
+  }'
+
+# 7. 查看内置半真实 demo cases
+curl http://127.0.0.1:8000/api/pipeline/material-demo/cases
+
+# 8. 运行某个内置 case
+curl -X POST http://127.0.0.1:8000/api/pipeline/material-demo/cases/air_fryer_balanced \
+  -H 'Content-Type: application/json'
 ```
+
+内置 case ID：
+
+- `air_fryer_balanced`：空气炸锅素材较完整。
+- `air_fryer_missing_proof`：空气炸锅缺证明素材。
+- `beauty_sunscreen_conversion`：防晒霜高转化带货。
+- `english_course_knowledge`：英语口语课知识转化。
+- `weak_materials_stress_test`：弱素材压力测试。
 
 ## 校验与验收
 

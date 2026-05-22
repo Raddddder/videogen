@@ -3,12 +3,36 @@
   "project": {
     "default_project_id": "case_001",
     "default_variant": "balanced",
-    "supported_categories": ["product_talk", "knowledge_talk", "mixed_talk"]
+    "supported_categories": [
+      "product_talk",
+      "knowledge_talk",
+      "mixed_talk"
+    ]
   },
   "pipeline": {
-    "segment_functions": ["hook", "pain_point", "setup", "solution", "proof", "transition", "cta"],
-    "slot_statuses": ["matched", "weak_match", "missing", "supplemented"],
-    "completion_strategies": ["direct_match", "reorder", "copy", "packaging", "aigc", "reuse"],
+    "segment_functions": [
+      "hook",
+      "pain_point",
+      "setup",
+      "solution",
+      "proof",
+      "transition",
+      "cta"
+    ],
+    "slot_statuses": [
+      "matched",
+      "weak_match",
+      "missing",
+      "supplemented"
+    ],
+    "completion_strategies": [
+      "direct_match",
+      "reorder",
+      "copy",
+      "packaging",
+      "aigc",
+      "reuse"
+    ],
     "scoring_weights": {
       "shot_type_match": 0.3,
       "semantic_role_match": 0.3,
@@ -33,7 +57,284 @@
   "models": {
     "primary_provider": "ark",
     "primary_model": "Doubao-Seed-2.0-lite",
-    "fallback_providers": ["openai", "gemini"],
+    "fallback_providers": [
+      "openai",
+      "gemini"
+    ],
     "request_timeout_sec": 60
+  },
+  "material_analysis": {
+    "default_duration_sec": {
+      "video_clip": 6.0,
+      "image": 0.0,
+      "copy": 0.0,
+      "audio": 10.0
+    },
+    "quality_baseline": {
+      "video_clip": 0.78,
+      "image": 0.72,
+      "copy": 1.0,
+      "audio": 0.7
+    },
+    "crop_risk_by_aspect_ratio": {
+      "9:16": "low",
+      "4:5": "medium",
+      "1:1": "medium",
+      "16:9": "high",
+      "text": "low",
+      "audio": "low",
+      "unknown": "medium"
+    },
+    "role_priority": [
+      "cta",
+      "hook",
+      "pain_point",
+      "proof",
+      "solution",
+      "setup",
+      "transition"
+    ],
+    "role_keywords": {
+      "hook": [
+        "hook",
+        "intro",
+        "opening",
+        "开头",
+        "反常识",
+        "第一步",
+        "误区",
+        "错"
+      ],
+      "pain_point": [
+        "pain",
+        "problem",
+        "mistake",
+        "痛点",
+        "问题",
+        "踩坑",
+        "外焦里生",
+        "焦",
+        "错"
+      ],
+      "setup": [
+        "setup",
+        "context",
+        "铺垫",
+        "背景",
+        "场景"
+      ],
+      "solution": [
+        "solution",
+        "demo",
+        "process",
+        "step",
+        "做法",
+        "步骤",
+        "预热",
+        "平铺",
+        "教程"
+      ],
+      "proof": [
+        "proof",
+        "result",
+        "compare",
+        "before",
+        "after",
+        "证明",
+        "效果",
+        "对比",
+        "外酥里嫩",
+        "少油"
+      ],
+      "transition": [
+        "transition",
+        "cut",
+        "转场",
+        "过渡"
+      ],
+      "cta": [
+        "cta",
+        "buy",
+        "link",
+        "cart",
+        "收藏",
+        "下单",
+        "链接",
+        "购买",
+        "领取"
+      ]
+    },
+    "shot_type_keywords": {
+      "talking_head": [
+        "talking",
+        "口播",
+        "人物",
+        "讲解",
+        "face",
+        "person"
+      ],
+      "talking_head_product_hold": [
+        "hold",
+        "product_hold",
+        "拿着",
+        "手持",
+        "cta"
+      ],
+      "product_demo": [
+        "demo",
+        "process",
+        "step",
+        "hands",
+        "操作",
+        "步骤",
+        "预热",
+        "平铺"
+      ],
+      "product_close_up": [
+        "closeup",
+        "close_up",
+        "detail",
+        "特写",
+        "细节"
+      ],
+      "comparison_shot": [
+        "compare",
+        "before_after",
+        "comparison",
+        "对比",
+        "效果"
+      ],
+      "copy_card": [
+        "copy",
+        "text",
+        "文案",
+        "卖点",
+        "caption"
+      ],
+      "voiceover": [
+        "audio",
+        "voice",
+        "旁白",
+        "配音"
+      ]
+    },
+    "keyword_tags": {
+      "talking_head": [
+        "talking",
+        "口播",
+        "face",
+        "person",
+        "人物"
+      ],
+      "clear_face": [
+        "clear_face",
+        "face",
+        "人脸",
+        "人物"
+      ],
+      "clear_voice": [
+        "voice",
+        "audio",
+        "口播",
+        "清晰"
+      ],
+      "product": [
+        "product",
+        "air_fryer",
+        "商品",
+        "产品",
+        "空气炸锅"
+      ],
+      "product_demo": [
+        "demo",
+        "process",
+        "hands",
+        "操作",
+        "步骤"
+      ],
+      "hands": [
+        "hands",
+        "手",
+        "操作"
+      ],
+      "process": [
+        "process",
+        "step",
+        "步骤",
+        "流程"
+      ],
+      "food_closeup": [
+        "food",
+        "鸡翅",
+        "食材",
+        "closeup",
+        "特写"
+      ],
+      "comparison": [
+        "compare",
+        "before_after",
+        "对比"
+      ],
+      "proof": [
+        "proof",
+        "result",
+        "效果",
+        "证明"
+      ],
+      "cta": [
+        "cta",
+        "link",
+        "buy",
+        "收藏",
+        "购买"
+      ]
+    },
+    "role_default_shot_type": {
+      "hook": "talking_head",
+      "pain_point": "talking_head",
+      "setup": "talking_head",
+      "solution": "product_demo",
+      "proof": "comparison_shot",
+      "transition": "product_close_up",
+      "cta": "talking_head_product_hold",
+      "unknown": "product_close_up"
+    },
+    "role_default_emotion_score": {
+      "hook": 8.0,
+      "pain_point": 6.0,
+      "setup": 5.0,
+      "solution": 7.0,
+      "proof": 7.0,
+      "transition": 5.0,
+      "cta": 8.0,
+      "unknown": 5.0
+    }
+  },
+  "plan_generation": {
+    "match_thresholds": {
+      "matched": 0.72,
+      "weak_match": 0.52
+    },
+    "direct_match_component_floor": 0.42,
+    "emotion_sensitive_functions": [
+      "hook",
+      "cta"
+    ],
+    "emotion_weak_match_below": 0.82,
+    "supplemental_material_types": [
+      "image",
+      "copy",
+      "audio"
+    ],
+    "variant_duration_factor": {
+      "balanced": 1.0,
+      "high_click": 0.9,
+      "high_conversion": 1.05,
+      "fast_pacing": 0.82,
+      "premium": 1.08
+    }
+  },
+  "demo_cases": {
+    "material_demo_cases": "mocks/material_demo_cases.json"
   }
 }
