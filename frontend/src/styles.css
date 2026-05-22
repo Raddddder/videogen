@@ -123,6 +123,82 @@ button {
   font-weight: 800;
 }
 
+.session-panel {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.sidebar-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sidebar-section-title strong {
+  color: #172033;
+}
+
+.session-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+}
+
+.session-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  background: #fbfcfe;
+  color: #172033;
+  cursor: pointer;
+  text-align: left;
+}
+
+.session-card.active {
+  border-color: #2563eb;
+  background: #eef4ff;
+}
+
+.session-card > span {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.session-card b,
+.session-card small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-card small {
+  color: #667085;
+  font-size: 12px;
+}
+
+.session-card div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.session-card em {
+  color: #667085;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .score-stack {
   display: grid;
   gap: 10px;

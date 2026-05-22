@@ -18,6 +18,8 @@ import type {
 
 type ViewKey = "overview" | "analysis" | "materials" | "plan";
 type VariantKey = "balanced" | "high_click" | "high_conversion";
+type SessionStatus = DemoSession["status"];
+type SessionStage = DemoSession["stage"];
 
 type SamplePreview = {
   label: string;
@@ -72,6 +74,25 @@ const statusThemes: Record<SlotStatus, "success" | "warning" | "danger" | "prima
   supplemented: "primary",
 };
 
+const sessionStatusLabels: Record<SessionStatus, string> = {
+  ready: "可演示",
+  running: "生成中",
+  needs_review: "需复核",
+};
+
+const sessionStatusThemes: Record<SessionStatus, "success" | "warning" | "danger" | "primary"> = {
+  ready: "success",
+  running: "primary",
+  needs_review: "warning",
+};
+
+const sessionStageLabels: Record<SessionStage, string> = {
+  sample: "样例解析",
+  materials: "素材理解",
+  plan: "方案生成",
+  preview: "结果预览",
+};
+
 const stageCards = [
   {id: "A", title: "样例视频解析", detail: "输出 Structure DNA"},
   {id: "B", title: "用户素材理解", detail: "输出 Material Library"},
@@ -113,19 +134,19 @@ const variantConfigs: VariantConfig[] = [
   },
 ];
 
-const defaultDraft: WorkbenchDraft = {
-  productTitle: "空气炸锅结构迁移样例",
-  sellingPoints: "少油酥脆、清洗方便、适合上班族晚餐",
-  materialBrief: "已有口播、商品过程镜头、成品展示；缺少明确证明段和强 CTA 收口镜头。",
+const editDefaults = {
   hookRewrite: "为什么你做空气炸锅总是干柴？其实少了这一步。",
   packagingStyle: "清爽实用风：白底标题条、绿色卖点标签、关键步骤放大",
   ctaText: "评论区领取同款做法，今晚就能复刻。",
   pacingIntensity: 72,
 };
 
+const defaultDraft = buildDraftFromSession(demoSessions[0]);
+
 export function App() {
   const [data, setData] = useState<PipelineResult>(fallbackPipeline);
   const [activeView, setActiveView] = useState<ViewKey>("overview");
+  const [activeSessionId, setActiveSessionId] = useState(demoSessions[0].id);
   const [activeSegmentId, setActiveSegmentId] = useState(
     fallbackPipeline.edit_plan.timeline[0]?.target_segment_id ?? "",
   );
@@ -133,7 +154,7 @@ export function App() {
   const [sampleUploading, setSampleUploading] = useState(false);
   const [apiState, setApiState] = useState("mock ready");
   const [uploadedSample, setUploadedSample] = useState<SamplePreview | undefined>();
-  const [activeVariant, setActiveVariant] = useState<VariantKey>("balanced");
+  const [activeVariant, setActiveVariant] = useState<VariantKey>(demoSessions[0].variant);
   const [draft, setDraft] = useState<WorkbenchDraft>(defaultDraft);
   const sampleInputRef = useRef<HTMLInputElement>(null);
 
@@ -147,7 +168,7 @@ export function App() {
 
   const totalSourceDuration = data.structure_dna.total_duration_sec;
   const totalTargetDuration = getTimelineDuration(data.edit_plan.timeline);
-  const activeSession = demoSessions[0];
+  const activeSession = demoSessions.find((session) => session.id === activeSessionId) ?? demoSessions[0];
   const currentSample = uploadedSample ?? activeSession?.sample;
   const activeVariantConfig = variantConfigs.find((variant) => variant.id === activeVariant) ?? variantConfigs[0];
   const targetTitle = draft.productTitle.trim() || activeSession?.targetTitle || data.edit_plan.target_title;
@@ -158,6 +179,14 @@ export function App() {
   const activeMaterial = activeTimelineItem?.selected_material_id
     ? materialById.get(activeTimelineItem.selected_material_id)
     : undefined;
+
+  const handleSelectSession = (session: DemoSession) => {
+    setActiveSessionId(session.id);
+    setActiveVariant(session.variant);
+    setDraft(buildDraftFromSession(session));
+    setActiveView("overview");
+    setApiState(`${session.caseId} ready`);
+  };
 
   const statusCounts = useMemo(() => {
     return statusOrder.reduce<Record<SlotStatus, number>>(
@@ -268,6 +297,33 @@ export function App() {
           {loading ? "生成中..." : "跑通 Demo 管线"}
         </Button>
 
+        <div className="session-panel">
+          <div className="sidebar-section-title">
+            <span>会话队列</span>
+            <strong>{demoSessions.length}</strong>
+          </div>
+          <div className="session-list">
+            {demoSessions.map((session) => (
+              <button
+                key={session.id}
+                className={session.id === activeSessionId ? "session-card active" : "session-card"}
+                type="button"
+                onClick={() => handleSelectSession(session)}
+              >
+                <span>{session.name}</span>
+                <b>{session.targetTitle}</b>
+                <small>{sessionStageLabels[session.stage]} / {session.gapProfile}</small>
+                <div>
+                  <Tag shape="round" theme={sessionStatusThemes[session.status]} variant="light">
+                    {sessionStatusLabels[session.status]}
+                  </Tag>
+                  <em>{session.artifacts.length} 产物</em>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="view-tabs" aria-label="工作台视图">
           {viewTabs.map((item) => (
             <Button
@@ -323,7 +379,6 @@ export function App() {
             materialById={materialById}
             sampleUploading={sampleUploading}
             totalSourceDuration={totalSourceDuration}
-            totalTargetDuration={totalTargetDuration}
             onOpenMaterials={() => setActiveView("materials")}
             onOpenPlan={() => setActiveView("plan")}
             onPickSample={() => sampleInputRef.current?.click()}
@@ -367,7 +422,6 @@ function OverviewView({
   materialById,
   sampleUploading,
   totalSourceDuration,
-  totalTargetDuration,
   onOpenMaterials,
   onOpenPlan,
   onPickSample,
@@ -382,18 +436,15 @@ function OverviewView({
   materialById: Map<string, Material>;
   sampleUploading: boolean;
   totalSourceDuration: number;
-  totalTargetDuration: number;
   onOpenMaterials: () => void;
   onOpenPlan: () => void;
   onPickSample: () => void;
 }) {
   const report = data.comparison_report.summary;
   const firstSegment = data.structure_dna.segments[0];
-  const selectedMaterials = data.edit_plan.timeline
-    .map((item) => item.selected_material_id ? materialById.get(item.selected_material_id) : undefined)
-    .filter((material): material is Material => Boolean(material));
   const sellingPoints = draft.sellingPoints.split(/[、,，]/).map((item) => item.trim()).filter(Boolean).slice(0, 3);
   const firstGap = data.edit_plan.missing_slots[0];
+  const readyArtifacts = session?.artifacts.filter((artifact) => artifact.state === "ready").length ?? 0;
 
   return (
     <div className="overview-dashboard">
@@ -412,17 +463,30 @@ function OverviewView({
 
       <section className="control-dock" aria-label="主功能摘要">
         <article className="control-card">
+          <span>当前会话</span>
+          <b>{session?.name} / {session?.caseId}</b>
+          <div className="input-chip-row">
+            <Tag shape="round" theme={session ? sessionStatusThemes[session.status] : "primary"} variant="light">
+              {session ? sessionStatusLabels[session.status] : "可演示"}
+            </Tag>
+            <span>{session ? sessionStageLabels[session.stage] : "结果预览"}</span>
+          </div>
+          <small>{session?.description ?? "单条会话展示样例、素材、方案和结果产物。"}</small>
+          <Button size="small" variant="outline" onClick={onOpenPlan}>编辑参数</Button>
+        </article>
+
+        <article className="control-card">
           <span>用户输入</span>
           <b>{targetTitle}</b>
           <div className="input-chip-row">
             {sellingPoints.map((point) => <span key={point}>{point}</span>)}
           </div>
           <small>{draft.materialBrief}</small>
-          <Button size="small" variant="outline" onClick={onOpenPlan}>编辑参数</Button>
+          <Button size="small" variant="outline" onClick={onOpenMaterials}>查看素材</Button>
         </article>
 
         <article className="control-card">
-          <span>生成版本</span>
+          <span>生成策略</span>
           <b>{activeVariant.label}</b>
           <small>{activeVariant.focus}</small>
           <div className="input-chip-row">
@@ -433,25 +497,15 @@ function OverviewView({
         </article>
 
         <article className="control-card">
-          <span>人工可调</span>
-          <b>{draft.hookRewrite}</b>
-          <small>{draft.ctaText}</small>
-          <div className="compact-meter">
-            <span>节奏 {draft.pacingIntensity}</span>
-            <Progress color="#2563eb" label={false} percentage={draft.pacingIntensity} size="small" theme="line" />
-          </div>
-          <Button size="small" variant="outline" onClick={onOpenPlan}>打开调整</Button>
-        </article>
-
-        <article className="control-card">
-          <span>素材缺口</span>
-          <b>{firstGap ? firstGap.function : "槽位已覆盖"}</b>
-          <small>{firstGap ? firstGap.suggested_fix : "当前素材可以支撑主要结构"}</small>
+          <span>产物与缺口</span>
+          <b>{readyArtifacts}/{session?.artifacts.length ?? 4} 已就绪</b>
+          <small>{firstGap ? firstGap.suggested_fix : session?.gapProfile ?? "当前素材可以支撑主要结构"}</small>
           <div className="input-chip-row">
-            <span>已选 {selectedMaterials.length}</span>
-            <span>{formatSeconds(totalTargetDuration)}s</span>
+            {(session?.artifacts ?? []).slice(0, 3).map((artifact) => (
+              <span key={artifact.label}>{artifact.label}</span>
+            ))}
           </div>
-          <Button size="small" variant="outline" onClick={onOpenMaterials}>查看素材</Button>
+          <Button size="small" variant="outline" onClick={onOpenPlan}>查看产物</Button>
         </article>
       </section>
 
@@ -943,6 +997,15 @@ function formatRange(range: [number, number]) {
 
 function formatSeconds(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function buildDraftFromSession(session: DemoSession): WorkbenchDraft {
+  return {
+    productTitle: session.targetTitle,
+    sellingPoints: session.sellingPoints.join("、"),
+    materialBrief: session.materialBrief,
+    ...editDefaults,
+  };
 }
 
 function getAdjustedScript(
