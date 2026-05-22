@@ -173,6 +173,14 @@ class GeneratePlanRequest(BaseModel):
     use_mock: bool = True
 
 
+class MaterialPipelineRequest(BaseModel):
+    project_id: str = "case_real_001"
+    sample_video_id: str = "sample_001"
+    target: TargetBrief = Field(default_factory=TargetBrief)
+    material_uris: List[str] = Field(default_factory=list)
+    variant: Variant = "balanced"
+
+
 class PipelineResult(BaseModel):
     structure_dna: StructureDNA
     material_library: MaterialLibrary

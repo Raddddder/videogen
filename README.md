@@ -388,8 +388,27 @@ curl -X POST http://127.0.0.1:8000/api/materials/analyze   -H 'Content-Type: app
 # 4. 方案生成
 curl -X POST http://127.0.0.1:8000/api/plans/generate   -H 'Content-Type: application/json'   -d '{"project_id":"case_001","target_title":"新品空气炸锅带货短视频","variant":"balanced","use_mock":true}'
 
-# 5. 一键 demo 管线
+# 5. 一键固定 demo 管线
 curl -X POST http://127.0.0.1:8000/api/pipeline/demo   -H 'Content-Type: application/json'
+
+# 6. 半真实素材输入 demo
+curl -X POST http://127.0.0.1:8000/api/pipeline/material-demo \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "project_id": "case_real_001",
+    "target": {
+      "title": "空气炸锅带货短视频",
+      "category": "product_talk",
+      "selling_points": ["少油", "外酥里嫩"]
+    },
+    "material_uris": [
+      "assets/hook_talking_head_9x16_5s.mp4",
+      "assets/product_demo_process_12s.mp4",
+      "assets/proof_before_after_food_4x5.jpg",
+      "assets/final_cta_link_6s.mov"
+    ],
+    "variant": "balanced"
+  }'
 ```
 
 ## 校验与验收
