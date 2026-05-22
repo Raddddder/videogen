@@ -549,6 +549,76 @@ button {
   line-height: 1.55;
 }
 
+.input-board {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.75fr) minmax(240px, 1fr) minmax(260px, 1.15fr) minmax(220px, 0.95fr);
+  gap: 14px;
+  margin-top: 16px;
+  align-items: stretch;
+}
+
+.field-stack {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.field-stack > span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.field-stack .t-input,
+.field-stack .t-textarea {
+  width: 100%;
+}
+
+.capture-summary {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.capture-summary b {
+  line-height: 1.4;
+}
+
+.variant-control,
+.edit-control {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.variant-control .t-radio-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.variant-control .t-radio-button {
+  min-width: 0;
+  text-align: center;
+}
+
+.variant-detail {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.variant-detail > b {
+  line-height: 1.45;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -945,6 +1015,7 @@ button {
 
 @media (max-width: 1100px) {
   .metric-grid,
+  .input-board,
   .stage-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1001,6 +1072,7 @@ button {
   }
 
   .material-grid,
+  .input-board,
   .metric-grid,
   .stage-strip {
     grid-template-columns: 1fr;

@@ -1,6 +1,6 @@
 import {useMemo, useRef, useState} from "react";
 import type {ReactNode} from "react";
-import {Button, Card, Progress, Tag, Tabs} from "tdesign-react";
+import {Button, Card, Input, Progress, Radio, Slider, Tag, Tabs, Textarea} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
 import {runDemoPipeline, uploadSampleVideo} from "./api";
@@ -17,6 +17,7 @@ import type {
 } from "./types";
 
 type ViewKey = "overview" | "analysis" | "materials" | "plan";
+type VariantKey = "balanced" | "high_click" | "high_conversion";
 
 type SamplePreview = {
   label: string;
@@ -24,6 +25,25 @@ type SamplePreview = {
   fileName: string;
   durationLabel: string;
   aspectRatio: string;
+};
+
+type WorkbenchDraft = {
+  productTitle: string;
+  sellingPoints: string;
+  materialBrief: string;
+  hookRewrite: string;
+  packagingStyle: string;
+  ctaText: string;
+  pacingIntensity: number;
+};
+
+type VariantConfig = {
+  id: VariantKey;
+  label: string;
+  focus: string;
+  scriptTone: string;
+  pacing: string;
+  packaging: string;
 };
 
 const functionLabels: Record<SegmentFunction, string> = {
@@ -59,6 +79,43 @@ const stageCards = [
   {id: "D", title: "前端展示预览", detail: "展示过程、缺口、结果视频"},
 ];
 
+const variantConfigs: VariantConfig[] = [
+  {
+    id: "balanced",
+    label: "平衡版",
+    focus: "保留样例结构，优先保证素材自然衔接",
+    scriptTone: "稳妥解释",
+    pacing: "中速",
+    packaging: "标题条 + 重点字幕",
+  },
+  {
+    id: "high_click",
+    label: "高点击版",
+    focus: "强化前三秒反差和痛点刺激",
+    scriptTone: "强钩子",
+    pacing: "快节奏",
+    packaging: "大字钩子 + 快切强调",
+  },
+  {
+    id: "high_conversion",
+    label: "高转化版",
+    focus: "强化证明段和购买理由",
+    scriptTone: "强信任",
+    pacing: "稳中偏快",
+    packaging: "卖点卡片 + CTA 强化",
+  },
+];
+
+const defaultDraft: WorkbenchDraft = {
+  productTitle: "空气炸锅结构迁移样例",
+  sellingPoints: "少油酥脆、清洗方便、适合上班族晚餐",
+  materialBrief: "已有口播、商品过程镜头、成品展示；缺少明确证明段和强 CTA 收口镜头。",
+  hookRewrite: "为什么你做空气炸锅总是干柴？其实少了这一步。",
+  packagingStyle: "清爽实用风：白底标题条、绿色卖点标签、关键步骤放大",
+  ctaText: "评论区领取同款做法，今晚就能复刻。",
+  pacingIntensity: 72,
+};
+
 export function App() {
   const [data, setData] = useState<PipelineResult>(fallbackPipeline);
   const [activeView, setActiveView] = useState<ViewKey>("overview");
@@ -69,6 +126,8 @@ export function App() {
   const [sampleUploading, setSampleUploading] = useState(false);
   const [apiState, setApiState] = useState("mock ready");
   const [uploadedSample, setUploadedSample] = useState<SamplePreview | undefined>();
+  const [activeVariant, setActiveVariant] = useState<VariantKey>("balanced");
+  const [draft, setDraft] = useState<WorkbenchDraft>(defaultDraft);
   const sampleInputRef = useRef<HTMLInputElement>(null);
 
   const materialById = useMemo(() => {
@@ -83,6 +142,9 @@ export function App() {
   const totalTargetDuration = getTimelineDuration(data.edit_plan.timeline);
   const activeSession = demoSessions[0];
   const currentSample = uploadedSample ?? activeSession?.sample;
+  const activeVariantConfig = variantConfigs.find((variant) => variant.id === activeVariant) ?? variantConfigs[0];
+  const targetTitle = draft.productTitle.trim() || activeSession?.targetTitle || data.edit_plan.target_title;
+  const resultScript = getAdjustedScript(data.edit_plan.timeline[0]?.script, draft, activeVariantConfig, "hook");
   const activeTimelineItem = data.edit_plan.timeline.find((item) => item.target_segment_id === activeSegmentId)
     ?? data.edit_plan.timeline[0];
   const activeSourceSegment = activeTimelineItem ? segmentById.get(activeTimelineItem.segment_id) : undefined;
@@ -227,7 +289,7 @@ export function App() {
         <header className="workspace-header">
           <div>
             <p className="eyebrow">Module D Workspace</p>
-            <h1>{activeSession?.targetTitle ?? data.edit_plan.target_title}</h1>
+            <h1>{targetTitle}</h1>
             <p className="workspace-subtitle">
               一站式输入样例视频和用户素材，AI 自动捕获结构、素材、缺口和生成方案。
             </p>
@@ -246,10 +308,15 @@ export function App() {
             data={data}
             session={activeSession}
             sample={currentSample}
+            draft={draft}
+            activeVariant={activeVariantConfig}
+            targetTitle={targetTitle}
+            resultScript={resultScript}
             materialById={materialById}
             sampleUploading={sampleUploading}
             totalSourceDuration={totalSourceDuration}
             totalTargetDuration={totalTargetDuration}
+            onDraftChange={(field, value) => setDraft((current) => ({...current, [field]: value}))}
             onPickSample={() => sampleInputRef.current?.click()}
           />
         )}
@@ -267,6 +334,11 @@ export function App() {
             activeTimelineItem={activeTimelineItem}
             activeSourceSegment={activeSourceSegment}
             activeMaterial={activeMaterial}
+            activeVariant={activeVariant}
+            activeVariantConfig={activeVariantConfig}
+            draft={draft}
+            onVariantChange={setActiveVariant}
+            onDraftChange={(field, value) => setDraft((current) => ({...current, [field]: value}))}
             setActiveSegmentId={setActiveSegmentId}
           />
         )}
@@ -279,19 +351,29 @@ function OverviewView({
   data,
   session,
   sample,
+  draft,
+  activeVariant,
+  targetTitle,
+  resultScript,
   materialById,
   sampleUploading,
   totalSourceDuration,
   totalTargetDuration,
+  onDraftChange,
   onPickSample,
 }: {
   data: PipelineResult;
   session?: DemoSession;
   sample?: SamplePreview;
+  draft: WorkbenchDraft;
+  activeVariant: VariantConfig;
+  targetTitle: string;
+  resultScript: string;
   materialById: Map<string, Material>;
   sampleUploading: boolean;
   totalSourceDuration: number;
   totalTargetDuration: number;
+  onDraftChange: (field: keyof WorkbenchDraft, value: string | number) => void;
   onPickSample: () => void;
 }) {
   const report = data.comparison_report.summary;
@@ -371,9 +453,9 @@ function OverviewView({
           </Button>
           <PhonePreview tone="result" videoSrc={session?.result.videoSrc}>
             <div className="phone-badge">{session?.result.label ?? "Generated"}</div>
-            <strong>{session?.targetTitle ?? data.edit_plan.target_title}</strong>
-            <span>{session?.result.renderVersion ?? data.edit_plan.variant}</span>
-            <p>{data.edit_plan.timeline[0]?.script ?? "等待生成"}</p>
+            <strong>{targetTitle}</strong>
+            <span>{activeVariant.label} / {session?.result.renderVersion ?? data.edit_plan.variant}</span>
+            <p>{resultScript}</p>
           </PhonePreview>
           <div className="generation-inputs">
             <b>README 对应产物</b>
@@ -406,6 +488,44 @@ function OverviewView({
           </div>
         </Card>
       </section>
+
+      <Card bordered className="panel">
+        <PanelTitle eyebrow="One-stop Input" title="用户素材与商品信息" />
+        <div className="input-board">
+          <label className="field-stack">
+            <span>商品 / 主题</span>
+            <Input
+              clearable
+              value={draft.productTitle}
+              onChange={(value) => onDraftChange("productTitle", String(value))}
+            />
+          </label>
+          <label className="field-stack">
+            <span>核心卖点</span>
+            <Textarea
+              autosize={{minRows: 3, maxRows: 4}}
+              value={draft.sellingPoints}
+              onChange={(value) => onDraftChange("sellingPoints", value)}
+            />
+          </label>
+          <label className="field-stack">
+            <span>当前素材状态</span>
+            <Textarea
+              autosize={{minRows: 3, maxRows: 4}}
+              value={draft.materialBrief}
+              onChange={(value) => onDraftChange("materialBrief", value)}
+            />
+          </label>
+          <div className="capture-summary">
+            <b>AI 需要自己捕获</b>
+            <div className="input-chip-row">
+              {(session?.oneStopCapture.aiCaptured ?? []).flatMap((capture) => capture.dimensions.slice(0, 2)).map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
 
       <Card bordered className="panel">
         <PanelTitle eyebrow="Pipeline" title="四段式演示链路" />
@@ -586,6 +706,11 @@ function PlanView({
   activeTimelineItem,
   activeSourceSegment,
   activeMaterial,
+  activeVariant,
+  activeVariantConfig,
+  draft,
+  onVariantChange,
+  onDraftChange,
   setActiveSegmentId,
 }: {
   data: PipelineResult;
@@ -594,6 +719,11 @@ function PlanView({
   activeTimelineItem?: TimelineItem;
   activeSourceSegment?: StructureSegment;
   activeMaterial?: Material;
+  activeVariant: VariantKey;
+  activeVariantConfig: VariantConfig;
+  draft: WorkbenchDraft;
+  onVariantChange: (variant: VariantKey) => void;
+  onDraftChange: (field: keyof WorkbenchDraft, value: string | number) => void;
   setActiveSegmentId: (id: string) => void;
 }) {
   return (
@@ -626,6 +756,64 @@ function PlanView({
 
       <div className="plan-side">
         <Card bordered className="panel">
+          <PanelTitle eyebrow="Variants" title="多版本生成" />
+          <div className="variant-control">
+            <Radio.Group
+              options={variantConfigs.map((variant) => ({label: variant.label, value: variant.id}))}
+              theme="button"
+              value={activeVariant}
+              variant="default-filled"
+              onChange={(value) => onVariantChange(value as VariantKey)}
+            />
+            <div className="variant-detail">
+              <b>{activeVariantConfig.focus}</b>
+              <Info label="脚本策略" value={activeVariantConfig.scriptTone} />
+              <Info label="节奏策略" value={activeVariantConfig.pacing} />
+              <Info label="包装策略" value={activeVariantConfig.packaging} />
+            </div>
+          </div>
+        </Card>
+
+        <Card bordered className="panel">
+          <PanelTitle eyebrow="Human Edit" title="人工可调" />
+          <div className="edit-control">
+            <label className="field-stack">
+              <span>Hook 改写</span>
+              <Textarea
+                autosize={{minRows: 2, maxRows: 3}}
+                value={draft.hookRewrite}
+                onChange={(value) => onDraftChange("hookRewrite", value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>包装风格</span>
+              <Input
+                value={draft.packagingStyle}
+                onChange={(value) => onDraftChange("packagingStyle", String(value))}
+              />
+            </label>
+            <label className="field-stack">
+              <span>CTA 文案</span>
+              <Input
+                value={draft.ctaText}
+                onChange={(value) => onDraftChange("ctaText", String(value))}
+              />
+            </label>
+            <label className="field-stack">
+              <span>节奏强度 {draft.pacingIntensity}</span>
+              <Slider
+                label="${value}"
+                max={100}
+                min={30}
+                step={1}
+                value={draft.pacingIntensity}
+                onChange={(value) => onDraftChange("pacingIntensity", Array.isArray(value) ? value[0] : value)}
+              />
+            </label>
+          </div>
+        </Card>
+
+        <Card bordered className="panel">
           <PanelTitle eyebrow="Inspector" title="选中槽位" />
           {activeTimelineItem && (
             <div className="inspector">
@@ -633,11 +821,11 @@ function PlanView({
                 {statusLabels[activeTimelineItem.slot_status]}
               </Tag>
               <h2>{functionLabels[activeTimelineItem.function]}</h2>
-              <p>{activeTimelineItem.script}</p>
+              <p>{getAdjustedScript(activeTimelineItem.script, draft, activeVariantConfig, activeTimelineItem.function)}</p>
               <Info label="样例原句" value={activeSourceSegment?.transcript ?? "无"} />
               <Info label="选中素材" value={activeMaterial?.file_name ?? "待补素材"} />
               <Info label="目标区间" value={formatRange(activeTimelineItem.target_time_range)} />
-              <Info label="补全策略" value={activeTimelineItem.completion_strategy} />
+              <Info label="补全策略" value={`${activeTimelineItem.completion_strategy} / ${activeVariantConfig.packaging}`} />
             </div>
           )}
         </Card>
@@ -750,6 +938,22 @@ function formatRange(range: [number, number]) {
 
 function formatSeconds(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function getAdjustedScript(
+  baseScript: string | undefined,
+  draft: WorkbenchDraft,
+  variant: VariantConfig,
+  segmentFunction?: SegmentFunction,
+) {
+  if (segmentFunction === "hook" && draft.hookRewrite.trim()) {
+    return `${draft.hookRewrite.trim()} (${variant.scriptTone})`;
+  }
+  if (segmentFunction === "cta" && draft.ctaText.trim()) {
+    return draft.ctaText.trim();
+  }
+  const script = baseScript || "等待生成";
+  return `${script}｜${variant.focus}`;
 }
 
 function buildVideoId(fileName: string) {
