@@ -1,6 +1,6 @@
 import {useMemo, useRef, useState} from "react";
 import type {ReactNode} from "react";
-import {Button, Card, Input, Progress, Radio, Slider, Tag, Tabs, Textarea} from "tdesign-react";
+import {Button, Card, Input, Progress, Radio, Slider, Tag, Textarea} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
 import {runDemoPipeline, uploadSampleVideo} from "./api";
@@ -77,6 +77,13 @@ const stageCards = [
   {id: "B", title: "用户素材理解", detail: "输出 Material Library"},
   {id: "C", title: "结构迁移生成", detail: "输出 Edit Plan 与对比报告"},
   {id: "D", title: "前端展示预览", detail: "展示过程、缺口、结果视频"},
+];
+
+const viewTabs: Array<{key: ViewKey; label: string}> = [
+  {key: "overview", label: "总览"},
+  {key: "analysis", label: "样例分析"},
+  {key: "materials", label: "素材匹配"},
+  {key: "plan", label: "方案输出"},
 ];
 
 const variantConfigs: VariantConfig[] = [
@@ -261,17 +268,18 @@ export function App() {
           {loading ? "生成中..." : "跑通 Demo 管线"}
         </Button>
 
-        <Tabs
-          className="view-tabs tdesign-view-tabs"
-          theme="card"
-          value={activeView}
-          onChange={(value) => setActiveView(value as ViewKey)}
-        >
-          <Tabs.TabPanel label="总览" value="overview" />
-          <Tabs.TabPanel label="样例分析" value="analysis" />
-          <Tabs.TabPanel label="素材匹配" value="materials" />
-          <Tabs.TabPanel label="方案输出" value="plan" />
-        </Tabs>
+        <div className="view-tabs" aria-label="工作台视图">
+          {viewTabs.map((item) => (
+            <Button
+              key={item.key}
+              className={activeView === item.key ? "active" : ""}
+              variant={activeView === item.key ? "base" : "outline"}
+              onClick={() => setActiveView(item.key)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
 
         <div className="score-stack">
           <Score label="结构一致" value={data.edit_plan.overall_score.structure_consistency} />
@@ -384,6 +392,44 @@ function OverviewView({
 
   return (
     <div className="view-stack">
+      <Card bordered className="panel">
+        <PanelTitle eyebrow="One-stop Input" title="用户素材与商品信息" />
+        <div className="input-board">
+          <label className="field-stack">
+            <span>商品 / 主题</span>
+            <Input
+              clearable
+              value={draft.productTitle}
+              onChange={(value) => onDraftChange("productTitle", String(value))}
+            />
+          </label>
+          <label className="field-stack">
+            <span>核心卖点</span>
+            <Textarea
+              autosize={{minRows: 3, maxRows: 4}}
+              value={draft.sellingPoints}
+              onChange={(value) => onDraftChange("sellingPoints", value)}
+            />
+          </label>
+          <label className="field-stack">
+            <span>当前素材状态</span>
+            <Textarea
+              autosize={{minRows: 3, maxRows: 4}}
+              value={draft.materialBrief}
+              onChange={(value) => onDraftChange("materialBrief", value)}
+            />
+          </label>
+          <div className="capture-summary">
+            <b>AI 需要自己捕获</b>
+            <div className="input-chip-row">
+              {(session?.oneStopCapture.aiCaptured ?? []).flatMap((capture) => capture.dimensions.slice(0, 2)).map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+
       <section className="migration-board">
         <Card bordered className="migration-column template-column">
           <PanelTitle eyebrow="Input 01" title="上传的模板视频" />
@@ -488,44 +534,6 @@ function OverviewView({
           </div>
         </Card>
       </section>
-
-      <Card bordered className="panel">
-        <PanelTitle eyebrow="One-stop Input" title="用户素材与商品信息" />
-        <div className="input-board">
-          <label className="field-stack">
-            <span>商品 / 主题</span>
-            <Input
-              clearable
-              value={draft.productTitle}
-              onChange={(value) => onDraftChange("productTitle", String(value))}
-            />
-          </label>
-          <label className="field-stack">
-            <span>核心卖点</span>
-            <Textarea
-              autosize={{minRows: 3, maxRows: 4}}
-              value={draft.sellingPoints}
-              onChange={(value) => onDraftChange("sellingPoints", value)}
-            />
-          </label>
-          <label className="field-stack">
-            <span>当前素材状态</span>
-            <Textarea
-              autosize={{minRows: 3, maxRows: 4}}
-              value={draft.materialBrief}
-              onChange={(value) => onDraftChange("materialBrief", value)}
-            />
-          </label>
-          <div className="capture-summary">
-            <b>AI 需要自己捕获</b>
-            <div className="input-chip-row">
-              {(session?.oneStopCapture.aiCaptured ?? []).flatMap((capture) => capture.dimensions.slice(0, 2)).map((item) => (
-                <span key={item}>{item}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Card>
 
       <Card bordered className="panel">
         <PanelTitle eyebrow="Pipeline" title="四段式演示链路" />
