@@ -23,6 +23,25 @@
 
 响应：`StructureDNA`
 
+真实上传路径会先用 FFmpeg 抽音频，再根据 `ASR_PROVIDER` 决定是否调用 ASR。当前支持：
+
+- `ASR_PROVIDER=mock`：不调用外部模型，只保留待 ASR 占位。
+- `ASR_PROVIDER=siliconflow`：调用 SiliconFlow `POST /v1/audio/transcriptions`，默认模型 `FunAudioLLM/SenseVoiceSmall`。
+- `ASR_PROVIDER=dashscope`：调用阿里百炼 DashScope `fun-asr`，解析返回的句子/词级时间戳，并优先用 ASR 时间戳生成 `StructureDNA.segments[].time_range`。
+- `ASR_PROVIDER=dashscope_realtime`：调用阿里百炼 DashScope 实时 ASR SDK / WebSocket，默认模型 `fun-asr-realtime`。该路径由后端先抽出本地 16k PCM wav 音频，再直接流式识别，不依赖公网文件 URL。
+
+DashScope `fun-asr` 的异步接口需要 `file_urls`，因此本地开发不能只给它 `127.0.0.1` 文件地址。部署后需要配置 `ASR_PUBLIC_BASE_URL`，让后端 `/outputs/...` 文件能被 DashScope 公网访问；或者先把抽取出的音频上传到 OSS，再把 OSS URL 传给 ASR。项目默认把上传样例视频限制为 50MB，避免前端传入模型无法处理的大文件。
+
+结构角色判断由 `LLM_PROVIDER` 控制。推荐比赛演示使用官方 Ark EP：`LLM_PROVIDER=ark` + `LLM_MODEL=ep-20260508213828-7ntjl`，让模型把 ASR 句子列表输出成规范 JSON，再由后端合并为 `StructureDNA.segments`。每段会额外带上：
+
+- `confidence`：结构角色置信度，0 到 1。
+- `analysis_reason`：模型或规则判断依据。
+- `source_sentence_ids`：该结构段对应的 ASR 句子 ID。
+
+顶层 `debug_trace` 会记录媒体解析、ASR、LLM 分类、兜底等阶段的状态、重试次数和耗时，供协作开发和排错使用。
+
+`basic_info.cover_frame_path` 允许为 `null`。封面抽帧失败时不会中断结构分析，后端会在 `debug_trace` 里记录 `cover_extraction fallback` 并继续返回 `StructureDNA`。镜头检测失败同理，会记录 `scene_detection fallback` 并退回 ASR/时长兜底。
+
 ## Module B
 
 `POST /api/materials/analyze`
@@ -77,6 +96,27 @@
   "comparison_report": {}
 }
 ```
+
+## Uploaded Sample Pipeline
+
+`POST /api/pipeline/upload-sample`
+
+表单上传真实样例视频，并立刻跑完整同步链路：真实 `StructureDNA` + 当前素材库规则 + 新 `EditPlan` + `comparison_report`。当前如果没有传 `material_uris`，后端会继续使用 mock 素材库，只保证样例视频解析和下游方案同步刷新。
+
+Form Data：
+
+```text
+file=<video file>
+project_id=case_001
+video_id=sample_uploaded
+target_title=新品空气炸锅带货短视频
+target_category=product_talk
+selling_points=少油,外酥里嫩
+material_uris=assets/a.mp4,assets/b.jpg
+variant=balanced
+```
+
+响应：`PipelineResult`
 
 ## Material Demo Pipeline
 

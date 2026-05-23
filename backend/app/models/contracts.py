@@ -41,6 +41,9 @@ class StructureSegment(BaseModel):
     text_pattern: str
     audio_cue: Optional[str] = None
     visual_cue: Optional[str] = None
+    confidence: Optional[float] = None
+    analysis_reason: Optional[str] = None
+    source_sentence_ids: List[str] = Field(default_factory=list)
     required_material_tags: List[str] = Field(default_factory=list)
     packaging: Packaging
 
@@ -50,6 +53,16 @@ class GlobalFeatures(BaseModel):
     pacing_pattern: str
     bgm_style: str
     overall_emotion_curve: List[float] = Field(default_factory=list)
+
+
+class DebugTraceEvent(BaseModel):
+    stage: str
+    status: str
+    message: str
+    attempt: Optional[int] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    latency_ms: Optional[int] = None
 
 
 class StructureDNA(BaseModel):
@@ -62,6 +75,7 @@ class StructureDNA(BaseModel):
     basic_info: BasicInfo
     segments: List[StructureSegment]
     global_features: GlobalFeatures
+    debug_trace: List[DebugTraceEvent] = Field(default_factory=list)
 
 
 class TargetBrief(BaseModel):

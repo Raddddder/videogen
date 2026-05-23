@@ -46,7 +46,7 @@
         "fps": {"type": "number"},
         "shot_count": {"type": "integer"},
         "has_speech": {"type": "boolean"},
-        "cover_frame_path": {"type": "string"}
+        "cover_frame_path": {"type": ["string", "null"]}
       },
       "additionalProperties": false
     },

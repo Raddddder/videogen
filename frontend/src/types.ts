@@ -21,6 +21,9 @@ export type StructureSegment = {
   text_pattern: string;
   audio_cue?: string;
   visual_cue?: string;
+  confidence?: number;
+  analysis_reason?: string;
+  source_sentence_ids?: string[];
   emotion_score: number;
   pacing: "slow" | "medium" | "fast";
   required_material_tags: string[];
@@ -55,6 +58,15 @@ export type StructureDNA = {
     bgm_style: string;
     overall_emotion_curve: number[];
   };
+  debug_trace?: Array<{
+    stage: string;
+    status: string;
+    message: string;
+    attempt?: number;
+    provider?: string;
+    model?: string;
+    latency_ms?: number;
+  }>;
 };
 
 export type Material = {

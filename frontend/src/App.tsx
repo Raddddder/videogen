@@ -3,7 +3,7 @@ import type {ReactNode} from "react";
 import {Button, Card, Progress, Tag, Tabs} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
-import {runDemoPipeline, uploadSampleVideo} from "./api";
+import {runDemoPipeline, uploadSamplePipeline} from "./api";
 import {demoSessions} from "./demoSessions";
 import type {DemoSession} from "./demoSessions";
 import {fallbackPipeline} from "./mockState";
@@ -127,18 +127,16 @@ export function App() {
     setSampleUploading(true);
     setApiState("uploading sample");
     try {
-      const structureDna = await uploadSampleVideo(file, {
+      const result = await uploadSamplePipeline(file, {
         projectId: data.edit_plan.project_id || "case_001",
         videoId,
+        targetTitle: data.edit_plan.target_title,
+        targetCategory: data.material_library.target?.category,
+        sellingPoints: data.material_library.target?.selling_points,
+        variant: data.edit_plan.variant,
       });
-      setData((current) => ({
-        ...current,
-        structure_dna: structureDna,
-        edit_plan: {
-          ...current.edit_plan,
-          source_structure_id: structureDna.video_id,
-        },
-      }));
+      setData(result);
+      setActiveSegmentId(result.edit_plan.timeline[0]?.target_segment_id ?? "");
       setUploadedSample((previous) => {
         if (previous?.videoSrc.startsWith("blob:")) {
           URL.revokeObjectURL(previous.videoSrc);
@@ -147,13 +145,13 @@ export function App() {
           label: "Uploaded",
           videoSrc: previewUrl,
           fileName: file.name,
-          durationLabel: `${formatSeconds(structureDna.total_duration_sec)}s`,
-          aspectRatio: structureDna.basic_info
-            ? `${structureDna.basic_info.width} x ${structureDna.basic_info.height}`
+          durationLabel: `${formatSeconds(result.structure_dna.total_duration_sec)}s`,
+          aspectRatio: result.structure_dna.basic_info
+            ? `${result.structure_dna.basic_info.width} x ${result.structure_dna.basic_info.height}`
             : "uploaded",
         };
       });
-      setApiState("sample analyzed");
+      setApiState("sample pipeline synced");
       setActiveView("overview");
     } catch (error) {
       URL.revokeObjectURL(previewUrl);
@@ -323,7 +321,7 @@ function OverviewView({
           <div className="column-metrics">
             <Info label="模板时长" value={sample?.durationLabel ?? `${formatSeconds(totalSourceDuration)}s`} />
             <Info label="画面规格" value={data.structure_dna.basic_info ? `${data.structure_dna.basic_info.width} x ${data.structure_dna.basic_info.height}` : "9:16"} />
-            <Info label="镜头数量" value={String(data.structure_dna.basic_info?.shot_count ?? data.structure_dna.segments.length)} />
+            <Info label="自动镜头数" value={String(data.structure_dna.basic_info?.shot_count ?? data.structure_dna.segments.length)} />
           </div>
           <div className="mini-timeline">
             {data.structure_dna.segments.map((segment) => (
@@ -352,7 +350,7 @@ function OverviewView({
                 <div>
                   <b>{functionLabels[segment.function]}</b>
                   <p>{segment.transcript}</p>
-                  <small>{segment.text_pattern} / {segment.packaging.subtitle_style}</small>
+                  <small>{segment.visual_cue ?? segment.text_pattern} / {segment.pacing}</small>
                 </div>
               </section>
             ))}
@@ -476,7 +474,7 @@ function AnalysisView({data, totalDuration}: {data: PipelineResult; totalDuratio
         <div className="info-list">
           <Info label="分辨率" value={info ? `${info.width} x ${info.height}` : "mock"} />
           <Info label="帧率" value={info ? `${info.fps} fps` : "mock"} />
-          <Info label="镜头数" value={info ? String(info.shot_count) : String(data.structure_dna.segments.length)} />
+          <Info label="自动镜头数" value={info ? String(info.shot_count) : String(data.structure_dna.segments.length)} />
           <Info label="口播" value={info?.has_speech === false ? "否" : "是"} />
         </div>
       </Card>
@@ -491,7 +489,12 @@ function AnalysisView({data, totalDuration}: {data: PipelineResult; totalDuratio
                 <span>{formatRange(segment.time_range)}</span>
               </div>
               <p>{segment.transcript}</p>
-              <small>{segment.required_material_tags.join(" / ")}</small>
+              {segment.confidence !== undefined && (
+                <small>
+                  置信度 {Math.round(segment.confidence * 100)}% · {segment.analysis_reason ?? "结构模型判断"}
+                </small>
+              )}
+              <small>{segment.visual_cue ?? segment.required_material_tags.join(" / ")}</small>
             </article>
           ))}
         </div>
@@ -635,6 +638,7 @@ function PlanView({
               <h2>{functionLabels[activeTimelineItem.function]}</h2>
               <p>{activeTimelineItem.script}</p>
               <Info label="样例原句" value={activeSourceSegment?.transcript ?? "无"} />
+              <Info label="结构依据" value={activeSourceSegment?.analysis_reason ?? "未输出"} />
               <Info label="选中素材" value={activeMaterial?.file_name ?? "待补素材"} />
               <Info label="目标区间" value={formatRange(activeTimelineItem.target_time_range)} />
               <Info label="补全策略" value={activeTimelineItem.completion_strategy} />
