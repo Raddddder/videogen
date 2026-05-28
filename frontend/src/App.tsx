@@ -1,6 +1,6 @@
 import {useMemo, useRef, useState} from "react";
 import type {ReactNode} from "react";
-import {Button, Card, Progress, Tag, Tabs} from "tdesign-react";
+import {Button, Card, Input, Progress, Radio, Slider, Tag, Textarea} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
 import {runDemoPipeline, uploadSamplePipeline} from "./api";
@@ -16,7 +16,10 @@ import type {
   TimelineItem,
 } from "./types";
 
-type ViewKey = "overview" | "analysis" | "materials" | "plan";
+type ViewKey = "overview" | "analysis" | "materials" | "plan" | "acceptance";
+type VariantKey = "balanced" | "high_click" | "high_conversion";
+type SessionStatus = DemoSession["status"];
+type SessionStage = DemoSession["stage"];
 
 type SamplePreview = {
   label: string;
@@ -24,6 +27,38 @@ type SamplePreview = {
   fileName: string;
   durationLabel: string;
   aspectRatio: string;
+};
+
+type WorkbenchDraft = {
+  productTitle: string;
+  sellingPoints: string;
+  materialBrief: string;
+  hookRewrite: string;
+  packagingStyle: string;
+  ctaText: string;
+  pacingIntensity: number;
+};
+
+type VariantConfig = {
+  id: VariantKey;
+  label: string;
+  focus: string;
+  scriptTone: string;
+  pacing: string;
+  packaging: string;
+};
+
+type AcceptanceModule = {
+  owner: string;
+  module: string;
+  title: string;
+  status: "ready" | "partial" | "next";
+  scoreScope: string;
+  scope: string[];
+  inputs: string[];
+  outputs: string[];
+  checks: string[];
+  testCommand: string;
 };
 
 const functionLabels: Record<SegmentFunction, string> = {
@@ -52,16 +87,131 @@ const statusThemes: Record<SlotStatus, "success" | "warning" | "danger" | "prima
   supplemented: "primary",
 };
 
+const sessionStatusLabels: Record<SessionStatus, string> = {
+  ready: "可演示",
+  running: "生成中",
+  needs_review: "需复核",
+};
+
+const sessionStatusThemes: Record<SessionStatus, "success" | "warning" | "danger" | "primary"> = {
+  ready: "success",
+  running: "primary",
+  needs_review: "warning",
+};
+
+const sessionStageLabels: Record<SessionStage, string> = {
+  sample: "样例解析",
+  materials: "素材理解",
+  plan: "方案生成",
+  preview: "结果预览",
+};
+
 const stageCards = [
-  {id: "A", title: "样例视频解析", detail: "输出 Structure DNA"},
-  {id: "B", title: "用户素材理解", detail: "输出 Material Library"},
-  {id: "C", title: "结构迁移生成", detail: "输出 Edit Plan 与对比报告"},
-  {id: "D", title: "前端展示预览", detail: "展示过程、缺口、结果视频"},
+  {id: "A", title: "样例结构拆解", detail: "解析 Structure DNA"},
+  {id: "B", title: "用户素材理解", detail: "生成 Material Library"},
+  {id: "C", title: "结构迁移生成", detail: "输出 Edit Plan 与缺口补全"},
+  {id: "D", title: "前端会话演示", detail: "时间线、报告与导出产物"},
 ];
+
+const viewTabs: Array<{key: ViewKey; label: string}> = [
+  {key: "overview", label: "总览"},
+  {key: "analysis", label: "样例分析"},
+  {key: "materials", label: "素材匹配"},
+  {key: "plan", label: "方案输出"},
+  {key: "acceptance", label: "验收清单"},
+];
+
+const acceptanceModules: AcceptanceModule[] = [
+  {
+    owner: "张旭宏",
+    module: "Module A",
+    title: "样例视频解析与 Structure DNA",
+    status: "partial",
+    scoreScope: "约 15-20 分",
+    scope: ["视频基础信息", "镜头切分检测", "ASR 与转写", "结构 / 功能 / 情绪曲线"],
+    inputs: ["样例视频", "AnalyzeSampleRequest", "source_uri / uploaded file"],
+    outputs: ["StructureDNA", "segments[]", "basic_info", "global_features"],
+    checks: ["分段时间范围必须递增", "分段总时长需接近视频总时长", "结构输出需过 schema 校验"],
+    testCommand: "python scripts\\validate_contracts.py",
+  },
+  {
+    owner: "吴隆正",
+    module: "Module B/C",
+    title: "素材理解、槽位匹配与缺口补全",
+    status: "ready",
+    scoreScope: "约 45-50 分",
+    scope: ["规则召回打分", "槽位匹配", "缺口识别", "补全策略", "对比报告输出"],
+    inputs: ["StructureDNA", "TargetBrief", "material_uris[]", "variant"],
+    outputs: ["MaterialLibrary", "EditPlan", "missing_slots[]", "comparison_report"],
+    checks: ["5 个内置 case 全部跑通", "状态枚举来自 slot_status", "每个槽位都有匹配与补全解释"],
+    testCommand: "python scripts\\run_demo_pipeline.py",
+  },
+  {
+    owner: "管振凯",
+    module: "Module D",
+    title: "前端产品、结构可视化与演示链路",
+    status: "ready",
+    scoreScope: "约 30-35 分",
+    scope: ["会话工作台", "样例分析展示", "素材匹配展示", "方案时间线展示", "缺口与补全可视化"],
+    inputs: ["PipelineResult", "demoSessions", "sample/result video assets"],
+    outputs: ["TDesign 工作台", "样例分析页", "素材匹配页", "方案输出页", "结构预览页"],
+    checks: ["5 个会话可演示", "pipeline 一键跑通", "时间线可视化", "缺口报告展示"],
+    testCommand: "npm --prefix frontend run build",
+  },
+];
+
+const acceptanceStatusLabels: Record<AcceptanceModule["status"], string> = {
+  ready: "已就绪",
+  partial: "部分完成",
+  next: "待开始",
+};
+
+const acceptanceStatusThemes: Record<AcceptanceModule["status"], "success" | "warning" | "primary"> = {
+  ready: "success",
+  partial: "warning",
+  next: "primary",
+};
+
+const variantConfigs: VariantConfig[] = [
+  {
+    id: "balanced",
+    label: "均衡版",
+    focus: "结构、点击与转化之间保持均衡",
+    scriptTone: "自然口播",
+    pacing: "适中",
+    packaging: "标题条 + 关键词高亮",
+  },
+  {
+    id: "high_click",
+    label: "高点击版",
+    focus: "放大开头冲突与好奇心",
+    scriptTone: "强钩子",
+    pacing: "快节奏",
+    packaging: "动态标题 + 节奏音效",
+  },
+  {
+    id: "high_conversion",
+    label: "高转化版",
+    focus: "强化证明与购买理由",
+    scriptTone: "强说服",
+    pacing: "稳中偏慢",
+    packaging: "信任背书 + CTA 强化",
+  },
+];
+
+const editDefaults = {
+  hookRewrite: "很多人第一次用这个产品，第一步就容易做错",
+  packagingStyle: "标题条 + 关键词高亮 + 节奏音效，弱匹配段加转场",
+  ctaText: "想少踩坑就先收藏，链接我放在下面了",
+  pacingIntensity: 72,
+};
+
+const defaultDraft = buildDraftFromSession(demoSessions[0]);
 
 export function App() {
   const [data, setData] = useState<PipelineResult>(fallbackPipeline);
   const [activeView, setActiveView] = useState<ViewKey>("overview");
+  const [activeSessionId, setActiveSessionId] = useState(demoSessions[0].id);
   const [activeSegmentId, setActiveSegmentId] = useState(
     fallbackPipeline.edit_plan.timeline[0]?.target_segment_id ?? "",
   );
@@ -69,6 +219,8 @@ export function App() {
   const [sampleUploading, setSampleUploading] = useState(false);
   const [apiState, setApiState] = useState("mock ready");
   const [uploadedSample, setUploadedSample] = useState<SamplePreview | undefined>();
+  const [activeVariant, setActiveVariant] = useState<VariantKey>(demoSessions[0].variant);
+  const [draft, setDraft] = useState<WorkbenchDraft>(defaultDraft);
   const sampleInputRef = useRef<HTMLInputElement>(null);
 
   const materialById = useMemo(() => {
@@ -81,14 +233,25 @@ export function App() {
 
   const totalSourceDuration = data.structure_dna.total_duration_sec;
   const totalTargetDuration = getTimelineDuration(data.edit_plan.timeline);
-  const activeSession = demoSessions[0];
+  const activeSession = demoSessions.find((session) => session.id === activeSessionId) ?? demoSessions[0];
   const currentSample = uploadedSample ?? activeSession?.sample;
+  const activeVariantConfig = variantConfigs.find((variant) => variant.id === activeVariant) ?? variantConfigs[0];
+  const targetTitle = draft.productTitle.trim() || activeSession?.targetTitle || data.edit_plan.target_title;
+  const resultScript = getAdjustedScript(data.edit_plan.timeline[0]?.script, draft, activeVariantConfig, "hook");
   const activeTimelineItem = data.edit_plan.timeline.find((item) => item.target_segment_id === activeSegmentId)
     ?? data.edit_plan.timeline[0];
   const activeSourceSegment = activeTimelineItem ? segmentById.get(activeTimelineItem.segment_id) : undefined;
   const activeMaterial = activeTimelineItem?.selected_material_id
     ? materialById.get(activeTimelineItem.selected_material_id)
     : undefined;
+
+  const handleSelectSession = (session: DemoSession) => {
+    setActiveSessionId(session.id);
+    setActiveVariant(session.variant);
+    setDraft(buildDraftFromSession(session));
+    setActiveView("overview");
+    setApiState(`${session.caseId} ready`);
+  };
 
   const statusCounts = useMemo(() => {
     return statusOrder.reduce<Record<SlotStatus, number>>(
@@ -197,17 +360,45 @@ export function App() {
           {loading ? "生成中..." : "跑通 Demo 管线"}
         </Button>
 
-        <Tabs
-          className="view-tabs tdesign-view-tabs"
-          theme="card"
-          value={activeView}
-          onChange={(value) => setActiveView(value as ViewKey)}
-        >
-          <Tabs.TabPanel label="总览" value="overview" />
-          <Tabs.TabPanel label="样例分析" value="analysis" />
-          <Tabs.TabPanel label="素材匹配" value="materials" />
-          <Tabs.TabPanel label="方案输出" value="plan" />
-        </Tabs>
+        <div className="session-panel">
+          <div className="sidebar-section-title">
+            <span>演示会话</span>
+            <strong>{demoSessions.length}</strong>
+          </div>
+          <div className="session-list">
+            {demoSessions.map((session) => (
+              <button
+                key={session.id}
+                className={session.id === activeSessionId ? "session-card active" : "session-card"}
+                type="button"
+                onClick={() => handleSelectSession(session)}
+              >
+                <span>{session.name}</span>
+                <b>{session.targetTitle}</b>
+                <small>{sessionStageLabels[session.stage]} / {session.gapProfile}</small>
+                <div>
+                  <Tag shape="round" theme={sessionStatusThemes[session.status]} variant="light">
+                    {sessionStatusLabels[session.status]}
+                  </Tag>
+                  <em>{session.artifacts.length} 产物</em>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="view-tabs" aria-label="视图切换导航">
+          {viewTabs.map((item) => (
+            <Button
+              key={item.key}
+              className={activeView === item.key ? "active" : ""}
+              variant={activeView === item.key ? "base" : "outline"}
+              onClick={() => setActiveView(item.key)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
 
         <div className="score-stack">
           <Score label="结构一致" value={data.edit_plan.overall_score.structure_consistency} />
@@ -225,9 +416,9 @@ export function App() {
         <header className="workspace-header">
           <div>
             <p className="eyebrow">Module D Workspace</p>
-            <h1>{activeSession?.targetTitle ?? data.edit_plan.target_title}</h1>
+            <h1>{targetTitle}</h1>
             <p className="workspace-subtitle">
-              一站式输入样例视频和用户素材，AI 自动捕获结构、素材、缺口和生成方案。
+              上传样例视频与用户素材，AI 自动完成结构拆解、素材匹配与方案生成。
             </p>
           </div>
           <div className="status-strip" aria-label="槽位状态统计">
@@ -244,11 +435,19 @@ export function App() {
             data={data}
             session={activeSession}
             sample={currentSample}
+            draft={draft}
+            activeVariantKey={activeVariant}
+            activeVariant={activeVariantConfig}
+            targetTitle={targetTitle}
+            resultScript={resultScript}
             materialById={materialById}
             sampleUploading={sampleUploading}
             totalSourceDuration={totalSourceDuration}
-            totalTargetDuration={totalTargetDuration}
+            onDraftChange={(field, value) => setDraft((current) => ({...current, [field]: value}))}
+            onOpenMaterials={() => setActiveView("materials")}
+            onOpenPlan={() => setActiveView("plan")}
             onPickSample={() => sampleInputRef.current?.click()}
+            onVariantChange={setActiveVariant}
           />
         )}
         {activeView === "analysis" && (
@@ -265,7 +464,20 @@ export function App() {
             activeTimelineItem={activeTimelineItem}
             activeSourceSegment={activeSourceSegment}
             activeMaterial={activeMaterial}
+            activeVariant={activeVariant}
+            activeVariantConfig={activeVariantConfig}
+            draft={draft}
+            onVariantChange={setActiveVariant}
+            onDraftChange={(field, value) => setDraft((current) => ({...current, [field]: value}))}
             setActiveSegmentId={setActiveSegmentId}
+          />
+        )}
+        {activeView === "acceptance" && (
+          <AcceptanceView
+            modules={acceptanceModules}
+            sessionCount={demoSessions.length}
+            statusCounts={statusCounts}
+            readiness={readiness}
           />
         )}
       </section>
@@ -277,149 +489,408 @@ function OverviewView({
   data,
   session,
   sample,
+  draft,
+  activeVariantKey,
+  activeVariant,
+  targetTitle,
+  resultScript,
   materialById,
   sampleUploading,
   totalSourceDuration,
-  totalTargetDuration,
+  onDraftChange,
+  onOpenMaterials,
+  onOpenPlan,
   onPickSample,
+  onVariantChange,
 }: {
   data: PipelineResult;
   session?: DemoSession;
   sample?: SamplePreview;
+  draft: WorkbenchDraft;
+  activeVariantKey: VariantKey;
+  activeVariant: VariantConfig;
+  targetTitle: string;
+  resultScript: string;
   materialById: Map<string, Material>;
   sampleUploading: boolean;
   totalSourceDuration: number;
-  totalTargetDuration: number;
+  onDraftChange: (field: keyof WorkbenchDraft, value: string | number) => void;
+  onOpenMaterials: () => void;
+  onOpenPlan: () => void;
   onPickSample: () => void;
+  onVariantChange: (variant: VariantKey) => void;
 }) {
   const report = data.comparison_report.summary;
   const firstSegment = data.structure_dna.segments[0];
-  const selectedMaterials = data.edit_plan.timeline
-    .map((item) => item.selected_material_id ? materialById.get(item.selected_material_id) : undefined)
-    .filter((material): material is Material => Boolean(material));
+  const sellingPoints = draft.sellingPoints.split(/[、，,]/).map((item) => item.trim()).filter(Boolean).slice(0, 3);
+  const firstGap = data.edit_plan.missing_slots[0];
+  const readyArtifacts = session?.artifacts.filter((artifact) => artifact.state === "ready").length ?? 0;
+  const matchSummary = data.edit_plan.timeline.reduce(
+    (acc, item) => {
+      acc[item.slot_status] += 1;
+      return acc;
+    },
+    {matched: 0, weak_match: 0, missing: 0, supplemented: 0} as Record<SlotStatus, number>,
+  );
+  const [activeWorkflowStep, setActiveWorkflowStep] = useState<"input" | "analysis" | "output">("input");
+  const [analysisDepth, setAnalysisDepth] = useState("balanced");
+  const [captureFocus, setCaptureFocus] = useState(["hook", "pacing", "proof", "gap"]);
+  const [gapStrictness, setGapStrictness] = useState(72);
+  const [aigcAssist, setAigcAssist] = useState(65);
+  const toggleCaptureFocus = (value: string) => {
+    setCaptureFocus((current) => (
+      current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value]
+    ));
+  };
 
   return (
-    <div className="view-stack">
-      <section className="migration-board">
-        <Card bordered className="migration-column template-column">
-          <PanelTitle eyebrow="Input 01" title="上传的模板视频" />
-          <Button
-            block
-            icon={<CloudUploadIcon />}
-            loading={sampleUploading}
-            variant="outline"
-            onClick={onPickSample}
-          >
-            {sampleUploading ? "上传分析中..." : sample?.fileName ?? "上传模板视频"}
-          </Button>
-          <PhonePreview tone="source" videoSrc={sample?.videoSrc}>
-            <div className="phone-badge">{sample?.label ?? "Template"}</div>
-            <strong>{sample?.fileName ?? data.structure_dna.video_id}</strong>
-            <span>{sample?.aspectRatio ?? data.structure_dna.category ?? "product_talk"}</span>
-            <p>{firstSegment?.transcript ?? "等待上传模板视频"}</p>
-          </PhonePreview>
-          <div className="column-metrics">
-            <Info label="模板时长" value={sample?.durationLabel ?? `${formatSeconds(totalSourceDuration)}s`} />
-            <Info label="画面规格" value={data.structure_dna.basic_info ? `${data.structure_dna.basic_info.width} x ${data.structure_dna.basic_info.height}` : "9:16"} />
-            <Info label="自动镜头数" value={String(data.structure_dna.basic_info?.shot_count ?? data.structure_dna.segments.length)} />
+    <div className="workflow-dashboard">
+      <section className="workflow-runway" aria-label="生成流程导航">
+        <button
+          className={activeWorkflowStep === "input" ? "workflow-runway-step current" : "workflow-runway-step done"}
+          type="button"
+          onClick={() => setActiveWorkflowStep("input")}
+        >
+          <span>1</span>
+          <div>
+            <b>样例输入</b>
+            <small>{sample?.fileName ?? data.structure_dna.video_id}</small>
           </div>
-          <div className="mini-timeline">
-            {data.structure_dna.segments.map((segment) => (
-              <span key={segment.segment_id} style={{width: `${Math.max(segment.duration_ratio ?? 0.12, 0.08) * 100}%`}}>
-                {functionLabels[segment.function]}
-              </span>
-            ))}
+        </button>
+        <button
+          className={activeWorkflowStep === "analysis" ? "workflow-runway-step current" : "workflow-runway-step done"}
+          type="button"
+          onClick={() => setActiveWorkflowStep("analysis")}
+        >
+          <span>2</span>
+          <div>
+            <b>结构分析</b>
+            <small>{matchSummary.matched} 已匹配 / {matchSummary.weak_match + matchSummary.missing} 待补全</small>
           </div>
-        </Card>
+        </button>
+        <button
+          className={activeWorkflowStep === "output" ? "workflow-runway-step current" : "workflow-runway-step next"}
+          type="button"
+          onClick={() => setActiveWorkflowStep("output")}
+        >
+          <span>3</span>
+          <div>
+            <b>输出</b>
+            <small>{activeVariant.label}</small>
+          </div>
+        </button>
+      </section>
 
-        <Card bordered className="migration-column script-column">
-          <PanelTitle eyebrow="Analysis 02" title="AI 自动捕获" />
-          <div className="script-formula">{data.structure_dna.structure_formula}</div>
-          <div className="auto-capture-panel">
-            <b>用户只需要提供</b>
-            <div className="input-chip-row">
-              {(session?.oneStopCapture.userInputs ?? ["样例视频", "用户素材"]).map((input) => (
-                <span key={input}>{input}</span>
+      <section className="workflow-stack" aria-label="三步生成工作流">
+        {activeWorkflowStep === "input" && (
+        <article className="workflow-card step-one is-current">
+          <div className="workflow-index">
+            <span>01</span>
+            <b>样例输入</b>
+            <small>上传爆款样例视频并解析结构</small>
+          </div>
+          <div className="workflow-content">
+            <PanelTitle eyebrow="Step 01" title="解析样例视频为 Structure DNA" />
+            <div className="workflow-summary-grid">
+              <Info label="样例文件" value={sample?.fileName ?? data.structure_dna.video_id} />
+              <Info label="模板时长" value={sample?.durationLabel ?? `${formatSeconds(totalSourceDuration)}s`} />
+              <Info label="画面规格" value={data.structure_dna.basic_info ? `${data.structure_dna.basic_info.width} x ${data.structure_dna.basic_info.height}` : "9:16"} />
+              <Info label="自动镜头数" value={String(data.structure_dna.basic_info?.shot_count ?? data.structure_dna.segments.length)} />
+            </div>
+            <div className="workflow-config-panel">
+              <b>目标信息配置</b>
+              <div className="config-grid">
+                <label className="field-stack">
+                  <span>标题 / 主题</span>
+                  <Input
+                    value={draft.productTitle}
+                    onChange={(value) => onDraftChange("productTitle", String(value))}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>核心卖点</span>
+                  <Input
+                    value={draft.sellingPoints}
+                    onChange={(value) => onDraftChange("sellingPoints", String(value))}
+                  />
+                </label>
+                <label className="field-stack config-grid-wide">
+                  <span>素材情况说明</span>
+                  <Textarea
+                    autosize={{minRows: 2, maxRows: 3}}
+                    value={draft.materialBrief}
+                    onChange={(value) => onDraftChange("materialBrief", value)}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="mini-timeline">
+              {data.structure_dna.segments.map((segment) => (
+                <span key={segment.segment_id} style={{width: `${Math.max(segment.duration_ratio ?? 0.12, 0.08) * 100}%`}}>
+                  {functionLabels[segment.function]}
+                </span>
+              ))}
+            </div>
+            <Button theme="primary" onClick={() => setActiveWorkflowStep("analysis")}>进入结构分析步骤</Button>
+          </div>
+          <div className="workflow-media">
+            <Button
+              block
+              icon={<CloudUploadIcon />}
+              loading={sampleUploading}
+              variant="outline"
+              onClick={onPickSample}
+            >
+              {sampleUploading ? "解析样例中..." : "上传样例视频"}
+            </Button>
+            <PhonePreview tone="source" videoSrc={sample?.videoSrc}>
+              <div className="phone-badge">{sample?.label ?? "Template"}</div>
+              <strong>{sample?.fileName ?? data.structure_dna.video_id}</strong>
+              <span>{sample?.aspectRatio ?? data.structure_dna.category ?? "product_talk"}</span>
+              <p>{firstSegment?.transcript ?? "等待上传样例视频"}</p>
+            </PhonePreview>
+          </div>
+        </article>
+        )}
+
+        {activeWorkflowStep === "analysis" && (
+        <article className="workflow-card step-two is-current">
+          <div className="workflow-index">
+            <span>02</span>
+            <b>结构分析</b>
+            <small>AI 自动捕获结构脚本与匹配</small>
+          </div>
+          <div className="workflow-content">
+            <PanelTitle eyebrow="Step 02" title="自动捕获的结构脚本与匹配" />
+            <div className="script-formula">{data.structure_dna.structure_formula}</div>
+            <div className="auto-capture-panel">
+              <b>自动捕获的产物</b>
+              <div className="input-chip-row">
+                <span>Structure DNA</span>
+                <span>Material Library</span>
+                <span>Slot Mapping</span>
+                <span>Gap Report</span>
+              </div>
+            </div>
+            <div className="workflow-config-panel">
+              <b>结构分析配置</b>
+              <div className="config-grid">
+                <label className="field-stack">
+                  <span>分析深度</span>
+                  <Radio.Group
+                    options={[
+                      {label: "快速", value: "fast"},
+                      {label: "均衡", value: "balanced"},
+                      {label: "深度", value: "deep"},
+                    ]}
+                    theme="button"
+                    value={analysisDepth}
+                    variant="default-filled"
+                    onChange={(value) => setAnalysisDepth(String(value))}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>缺口严格度 {gapStrictness}</span>
+                  <Slider
+                    label="${value}"
+                    max={100}
+                    min={30}
+                    step={1}
+                    value={gapStrictness}
+                    onChange={(value) => setGapStrictness(Array.isArray(value) ? value[0] : value)}
+                  />
+                </label>
+                <div className="field-stack config-grid-wide">
+                  <span>捕获重点</span>
+                  <div className="toggle-chip-row">
+                    {[
+                      ["hook", "Hook"],
+                      ["pacing", "节奏"],
+                      ["proof", "证明"],
+                      ["gap", "缺口"],
+                      ["visual", "画面"],
+                      ["cta", "CTA"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        className={captureFocus.includes(value) ? "toggle-chip active" : "toggle-chip"}
+                        type="button"
+                        onClick={() => toggleCaptureFocus(value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="matching-board">
+              <b>槽位匹配概览</b>
+              <div className="result-stack">
+                {data.edit_plan.timeline.slice(0, 5).map((item) => (
+                  <section key={item.target_segment_id}>
+                    <span className={`status-dot ${item.slot_status}`} />
+                    <b>{functionLabels[item.function]}</b>
+                    <small>{statusLabels[item.slot_status]} / {materialById.get(item.selected_material_id ?? "")?.file_name ?? item.completion_strategy}</small>
+                  </section>
+                ))}
+              </div>
+            </div>
+            <div className="script-scroll workflow-script-list">
+              {data.structure_dna.segments.slice(0, 4).map((segment, index) => (
+                <section className="script-beat" key={segment.segment_id}>
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <div>
+                    <b>{functionLabels[segment.function]}</b>
+                    <p>{segment.transcript}</p>
+                    <small>{segment.visual_cue ?? segment.text_pattern} / {segment.pacing}</small>
+                  </div>
+                </section>
               ))}
             </div>
           </div>
-          <div className="script-scroll">
-            {data.structure_dna.segments.map((segment, index) => (
-              <section className="script-beat" key={segment.segment_id}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                <div>
-                  <b>{functionLabels[segment.function]}</b>
-                  <p>{segment.transcript}</p>
-                  <small>{segment.visual_cue ?? segment.text_pattern} / {segment.pacing}</small>
-                </div>
-              </section>
-            ))}
-          </div>
-          <div className="creative-note">
-            <b>AI 捕获后生成的创意判断</b>
-            <p>{report?.main_gap ?? "先保留模板结构，再按素材强弱决定补全策略。"}</p>
-            <small>{report?.main_fix ?? "用包装、文案卡片或 AIGC 镜头补齐缺口。"}</small>
-          </div>
-        </Card>
-
-        <Card bordered className="migration-column result-column">
-          <PanelTitle eyebrow="Output 03" title="生成的结果视频" />
-          <Button block icon={<RocketIcon />} theme="primary" variant="outline">
-            {session?.result.fileName ?? "生成结果视频"}
-          </Button>
-          <PhonePreview tone="result" videoSrc={session?.result.videoSrc}>
-            <div className="phone-badge">{session?.result.label ?? "Generated"}</div>
-            <strong>{session?.targetTitle ?? data.edit_plan.target_title}</strong>
-            <span>{session?.result.renderVersion ?? data.edit_plan.variant}</span>
-            <p>{data.edit_plan.timeline[0]?.script ?? "等待生成"}</p>
-          </PhonePreview>
-          <div className="generation-inputs">
-            <b>README 对应产物</b>
-            <div className="input-chip-row">
-              <span>Structure DNA</span>
-              <span>Material Library</span>
-              <span>Edit Plan</span>
+          <div className="workflow-side">
+            <div className="workflow-session-card">
+              <span>当前会话</span>
+              <b>{session?.name} / {session?.caseId}</b>
+              <div className="input-chip-row">
+                <Tag shape="round" theme={session ? sessionStatusThemes[session.status] : "primary"} variant="light">
+                  {session ? sessionStatusLabels[session.status] : "可演示"}
+                </Tag>
+                <span>{session ? sessionStageLabels[session.stage] : "样例解析"}</span>
+              </div>
+              <div className="input-chip-row">
+                {sellingPoints.map((point) => <span key={point}>{point}</span>)}
+              </div>
+              <small>{session?.description ?? "展示当前会话的结构迁移与缺口补全过程"}</small>
             </div>
-            <p>{session?.inputs.creativeBrief ?? "根据分析脚本和素材状态生成结果视频。"}</p>
+            <div className="creative-note">
+              <b>创意判断</b>
+              <p>{report?.main_gap ?? "先保留模板结构，再按素材强弱决定补全策略。"}</p>
+            </div>
+            <div className="workflow-actions">
+              <Button variant="outline" onClick={() => setActiveWorkflowStep("input")}>返回样例输入</Button>
+              <Button variant="outline" onClick={onOpenMaterials}>素材匹配</Button>
+              <Button theme="primary" onClick={() => setActiveWorkflowStep("output")}>进入结果生成</Button>
+            </div>
           </div>
-          <div className="capture-stack">
-            {(session?.oneStopCapture.aiCaptured ?? []).map((capture) => (
-              <section key={capture.module}>
-                <span>{capture.module}</span>
-                <div>
-                  <b>{capture.title}</b>
-                  <small>{capture.output}</small>
-                </div>
-              </section>
-            ))}
-          </div>
-          <div className="result-stack">
-            {data.edit_plan.timeline.map((item) => (
-              <section key={item.target_segment_id}>
-                <span className={`status-dot ${item.slot_status}`} />
-                <b>{functionLabels[item.function]}</b>
-                <small>{materialById.get(item.selected_material_id ?? "")?.file_name ?? item.completion_strategy}</small>
-              </section>
-            ))}
-          </div>
-        </Card>
-      </section>
+        </article>
+        )}
 
-      <Card bordered className="panel">
-        <PanelTitle eyebrow="Pipeline" title="四段式演示链路" />
-        <p className="pipeline-copy">
-          README 里的 A/B/C/D 模块仍然保留边界；对用户来说是一站式，对系统来说是稳定 JSON 契约逐层传递。
-        </p>
-        <div className="stage-strip">
-          {stageCards.map((stage) => (
-            <article className="stage-card" key={stage.id}>
-              <span>{stage.id}</span>
-              <b>{stage.title}</b>
-              <small>{stage.detail}</small>
-            </article>
-          ))}
-        </div>
-      </Card>
+        {activeWorkflowStep === "output" && (
+        <article className="workflow-card step-three is-current">
+          <div className="workflow-index">
+            <span>03</span>
+            <b>输出</b>
+            <small>结合素材、AIGC 与迁移策略</small>
+          </div>
+          <div className="workflow-content">
+            <PanelTitle eyebrow="Step 03" title="生成结果视频与剪辑方案" />
+            <div className="workflow-config-panel">
+              <b>生成配置</b>
+              <div className="config-grid">
+                <label className="field-stack config-grid-wide">
+                  <span>生成版本</span>
+                  <Radio.Group
+                    options={variantConfigs.map((variant) => ({label: variant.label, value: variant.id}))}
+                    theme="button"
+                    value={activeVariantKey}
+                    variant="default-filled"
+                    onChange={(value) => onVariantChange(value as VariantKey)}
+                  />
+                </label>
+                <label className="field-stack config-grid-wide">
+                  <span>Hook 改写</span>
+                  <Textarea
+                    autosize={{minRows: 2, maxRows: 3}}
+                    value={draft.hookRewrite}
+                    onChange={(value) => onDraftChange("hookRewrite", value)}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>包装风格</span>
+                  <Input
+                    value={draft.packagingStyle}
+                    onChange={(value) => onDraftChange("packagingStyle", String(value))}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>CTA 文案</span>
+                  <Input
+                    value={draft.ctaText}
+                    onChange={(value) => onDraftChange("ctaText", String(value))}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>节奏强度 {draft.pacingIntensity}</span>
+                  <Slider
+                    label="${value}"
+                    max={100}
+                    min={30}
+                    step={1}
+                    value={draft.pacingIntensity}
+                    onChange={(value) => onDraftChange("pacingIntensity", Array.isArray(value) ? value[0] : value)}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>AIGC 补全强度 {aigcAssist}</span>
+                  <Slider
+                    label="${value}"
+                    max={100}
+                    min={0}
+                    step={1}
+                    value={aigcAssist}
+                    onChange={(value) => setAigcAssist(Array.isArray(value) ? value[0] : value)}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="workflow-summary-grid">
+              <Info label="目标主题" value={targetTitle} />
+              <Info label="生成版本" value={activeVariant.label} />
+              <Info label="节奏风格" value={activeVariant.pacing} />
+              <Info label="产物就绪" value={`${readyArtifacts}/${session?.artifacts.length ?? 4} 已就绪`} />
+            </div>
+            <div className="generation-inputs">
+              <b>生成依据</b>
+              <div className="input-chip-row">
+                <span>Structure DNA</span>
+                <span>Material Library</span>
+                <span>Edit Plan</span>
+                <span>AIGC 补全</span>
+              </div>
+              <p>{firstGap ? firstGap.suggested_fix : session?.inputs.creativeBrief ?? "根据结构脚本与素材状态生成结果方案"}</p>
+            </div>
+            <div className="result-stack">
+              {data.edit_plan.timeline.slice(0, 4).map((item) => (
+                <section key={item.target_segment_id}>
+                  <span className={`status-dot ${item.slot_status}`} />
+                  <b>{functionLabels[item.function]}</b>
+                  <small>{materialById.get(item.selected_material_id ?? "")?.file_name ?? item.completion_strategy}</small>
+                </section>
+              ))}
+            </div>
+          </div>
+          <div className="workflow-media">
+            <Button block icon={<RocketIcon />} theme="primary" variant="outline" onClick={onOpenPlan}>
+              {session?.result.fileName ?? "生成结果视频"}
+            </Button>
+            <PhonePreview tone="result" videoSrc={session?.result.videoSrc}>
+              <div className="phone-badge">{session?.result.label ?? "Generated"}</div>
+              <strong>{targetTitle}</strong>
+              <span>{activeVariant.label} / {session?.result.renderVersion ?? data.edit_plan.variant}</span>
+              <p>{resultScript}</p>
+            </PhonePreview>
+          </div>
+          <div className="workflow-actions workflow-actions-wide">
+            <Button variant="outline" onClick={() => setActiveWorkflowStep("analysis")}>返回结构分析</Button>
+            <Button theme="primary" onClick={onOpenPlan}>查看完整方案</Button>
+          </div>
+        </article>
+        )}
+      </section>
     </div>
   );
 }
@@ -589,6 +1060,11 @@ function PlanView({
   activeTimelineItem,
   activeSourceSegment,
   activeMaterial,
+  activeVariant,
+  activeVariantConfig,
+  draft,
+  onVariantChange,
+  onDraftChange,
   setActiveSegmentId,
 }: {
   data: PipelineResult;
@@ -597,6 +1073,11 @@ function PlanView({
   activeTimelineItem?: TimelineItem;
   activeSourceSegment?: StructureSegment;
   activeMaterial?: Material;
+  activeVariant: VariantKey;
+  activeVariantConfig: VariantConfig;
+  draft: WorkbenchDraft;
+  onVariantChange: (variant: VariantKey) => void;
+  onDraftChange: (field: keyof WorkbenchDraft, value: string | number) => void;
   setActiveSegmentId: (id: string) => void;
 }) {
   return (
@@ -629,6 +1110,64 @@ function PlanView({
 
       <div className="plan-side">
         <Card bordered className="panel">
+          <PanelTitle eyebrow="Variants" title="版本生成控制" />
+          <div className="variant-control">
+            <Radio.Group
+              options={variantConfigs.map((variant) => ({label: variant.label, value: variant.id}))}
+              theme="button"
+              value={activeVariant}
+              variant="default-filled"
+              onChange={(value) => onVariantChange(value as VariantKey)}
+            />
+            <div className="variant-detail">
+              <b>{activeVariantConfig.focus}</b>
+              <Info label="脚本基调" value={activeVariantConfig.scriptTone} />
+              <Info label="节奏风格" value={activeVariantConfig.pacing} />
+              <Info label="包装方式" value={activeVariantConfig.packaging} />
+            </div>
+          </div>
+        </Card>
+
+        <Card bordered className="panel">
+          <PanelTitle eyebrow="Human Edit" title="人工微调" />
+          <div className="edit-control">
+            <label className="field-stack">
+              <span>Hook 改写</span>
+              <Textarea
+                autosize={{minRows: 2, maxRows: 3}}
+                value={draft.hookRewrite}
+                onChange={(value) => onDraftChange("hookRewrite", value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>包装风格</span>
+              <Input
+                value={draft.packagingStyle}
+                onChange={(value) => onDraftChange("packagingStyle", String(value))}
+              />
+            </label>
+            <label className="field-stack">
+              <span>CTA 文案</span>
+              <Input
+                value={draft.ctaText}
+                onChange={(value) => onDraftChange("ctaText", String(value))}
+              />
+            </label>
+            <label className="field-stack">
+              <span>节奏强度 {draft.pacingIntensity}</span>
+              <Slider
+                label="${value}"
+                max={100}
+                min={30}
+                step={1}
+                value={draft.pacingIntensity}
+                onChange={(value) => onDraftChange("pacingIntensity", Array.isArray(value) ? value[0] : value)}
+              />
+            </label>
+          </div>
+        </Card>
+
+        <Card bordered className="panel">
           <PanelTitle eyebrow="Inspector" title="选中槽位" />
           {activeTimelineItem && (
             <div className="inspector">
@@ -636,12 +1175,12 @@ function PlanView({
                 {statusLabels[activeTimelineItem.slot_status]}
               </Tag>
               <h2>{functionLabels[activeTimelineItem.function]}</h2>
-              <p>{activeTimelineItem.script}</p>
+              <p>{getAdjustedScript(activeTimelineItem.script, draft, activeVariantConfig, activeTimelineItem.function)}</p>
               <Info label="样例原句" value={activeSourceSegment?.transcript ?? "无"} />
               <Info label="结构依据" value={activeSourceSegment?.analysis_reason ?? "未输出"} />
               <Info label="选中素材" value={activeMaterial?.file_name ?? "待补素材"} />
               <Info label="目标区间" value={formatRange(activeTimelineItem.target_time_range)} />
-              <Info label="补全策略" value={activeTimelineItem.completion_strategy} />
+              <Info label="补全策略" value={`${activeTimelineItem.completion_strategy} / ${activeVariantConfig.packaging}`} />
             </div>
           )}
         </Card>
@@ -672,6 +1211,85 @@ function PlanRow({item, onSelect}: {item: TimelineItem; onSelect: (id: string) =
       <p>{item.script}</p>
       <small>{item.explanation}</small>
     </button>
+  );
+}
+
+function AcceptanceView({
+  modules,
+  sessionCount,
+  statusCounts,
+  readiness,
+}: {
+  modules: AcceptanceModule[];
+  sessionCount: number;
+  statusCounts: Record<SlotStatus, number>;
+  readiness: number;
+}) {
+  return (
+    <div className="acceptance-view">
+      <section className="acceptance-summary">
+        <article>
+          <span>验收模块数</span>
+          <strong>{modules.length}</strong>
+          <small>A / B+C / D 三方验收</small>
+        </article>
+        <article>
+          <span>演示 case</span>
+          <strong>{sessionCount}</strong>
+          <small>覆盖正常、缺口与弱素材等场景</small>
+        </article>
+        <article>
+          <span>覆盖槽位</span>
+          <strong>{statusCounts.matched + statusCounts.supplemented}/{Object.values(statusCounts).reduce((sum, value) => sum + value, 0)}</strong>
+          <small>matched + supplemented</small>
+        </article>
+        <article>
+          <span>演示可用度</span>
+          <strong>{readiness}</strong>
+          <Progress color="#0f766e" label={false} percentage={readiness} size="small" theme="line" />
+        </article>
+      </section>
+
+      <section className="acceptance-grid">
+        {modules.map((item) => (
+          <Card bordered className="panel acceptance-card" key={item.module}>
+            <div className="acceptance-card-head">
+              <div>
+                <span>{item.module}</span>
+                <h2>{item.title}</h2>
+                <small>{item.owner} / {item.scoreScope}</small>
+              </div>
+              <Tag shape="round" theme={acceptanceStatusThemes[item.status]} variant="light">
+                {acceptanceStatusLabels[item.status]}
+              </Tag>
+            </div>
+
+            <AcceptanceList title="覆盖范围" items={item.scope} />
+            <AcceptanceList title="输入" items={item.inputs} />
+            <AcceptanceList title="输出" items={item.outputs} />
+            <AcceptanceList title="验收检查" items={item.checks} />
+
+            <div className="acceptance-command">
+              <span>验收命令</span>
+              <code>{item.testCommand}</code>
+            </div>
+          </Card>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function AcceptanceList({title, items}: {title: string; items: string[]}) {
+  return (
+    <div className="acceptance-list">
+      <b>{title}</b>
+      <div>
+        {items.map((item) => (
+          <span key={item}>{item}</span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -754,6 +1372,31 @@ function formatRange(range: [number, number]) {
 
 function formatSeconds(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function buildDraftFromSession(session: DemoSession): WorkbenchDraft {
+  return {
+    productTitle: session.targetTitle,
+    sellingPoints: session.sellingPoints.join("、"),
+    materialBrief: session.materialBrief,
+    ...editDefaults,
+  };
+}
+
+function getAdjustedScript(
+  baseScript: string | undefined,
+  draft: WorkbenchDraft,
+  variant: VariantConfig,
+  segmentFunction?: SegmentFunction,
+) {
+  if (segmentFunction === "hook" && draft.hookRewrite.trim()) {
+    return `${draft.hookRewrite.trim()} (${variant.scriptTone})`;
+  }
+  if (segmentFunction === "cta" && draft.ctaText.trim()) {
+    return draft.ctaText.trim();
+  }
+  const script = baseScript || "待生成脚本";
+  return `${script}·${variant.focus}`;
 }
 
 function buildVideoId(fileName: string) {
