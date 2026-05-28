@@ -1,8 +1,8 @@
-import shutil
 from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import ValidationError
 
 from app.api.dependencies import (
     build_demo_pipeline,
@@ -26,8 +26,10 @@ from app.models.contracts import (
     StructureDNA,
     TargetBrief,
 )
+from app.services.asr_service import AsrServiceError
 from app.services.json_repository import JsonRepository
 from app.services.material_analyzer import MaterialAnalyzer
+from app.services.media_probe import MediaProbeDependencyError, MediaProbeError
 from app.services.plan_generator import PlanGenerator
 from app.services.report_service import ReportService
 from app.services.structure_analyzer import StructureAnalyzer
@@ -37,6 +39,8 @@ router = APIRouter()
 
 
 ALLOWED_SAMPLE_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm"}
+SUPPORTED_VARIANTS = {"balanced", "high_click", "high_conversion", "fast_pacing", "premium"}
+UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 @router.get("/health")
@@ -47,6 +51,9 @@ def health() -> Dict[str, Any]:
         "env": settings.env,
         "model_provider": settings.model_provider,
         "model_name": settings.model_name,
+        "asr_provider": settings.asr_provider,
+        "asr_model": settings.asr_model,
+        "asr_public_base_url_configured": bool(settings.asr_public_base_url),
     }
 
 
@@ -60,7 +67,7 @@ def analyze_sample(
     request: AnalyzeSampleRequest,
     analyzer: StructureAnalyzer = Depends(build_structure_analyzer),
 ) -> StructureDNA:
-    return analyzer.analyze(request)
+    return _run_structure_analysis(request, analyzer)
 
 
 @router.post("/api/samples/upload", response_model=StructureDNA)
@@ -70,6 +77,67 @@ def upload_sample(
     video_id: str = Form("sample_uploaded"),
     analyzer: StructureAnalyzer = Depends(build_structure_analyzer),
 ) -> StructureDNA:
+    safe_project_id, safe_video_id, upload_path = _save_uploaded_sample(file, project_id, video_id)
+    return _analyze_saved_sample(safe_project_id, safe_video_id, upload_path, analyzer)
+
+
+@router.post("/api/pipeline/upload-sample", response_model=PipelineResult)
+def upload_sample_pipeline(
+    file: UploadFile = File(...),
+    project_id: str = Form("case_001"),
+    video_id: str = Form("sample_uploaded"),
+    target_title: str = Form("新品空气炸锅带货短视频"),
+    target_category: str = Form("product_talk"),
+    selling_points: str = Form("少油,外酥里嫩"),
+    material_uris: str = Form(""),
+    variant: str = Form("balanced"),
+    analyzer: StructureAnalyzer = Depends(build_structure_analyzer),
+    material_analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
+    plan_generator: PlanGenerator = Depends(build_plan_generator),
+    report_service: ReportService = Depends(build_report_service),
+) -> PipelineResult:
+    if variant not in SUPPORTED_VARIANTS:
+        raise HTTPException(status_code=400, detail=f"Unsupported variant: {variant}")
+
+    safe_project_id, safe_video_id, upload_path = _save_uploaded_sample(file, project_id, video_id)
+    structure_dna = _analyze_saved_sample(safe_project_id, safe_video_id, upload_path, analyzer)
+    material_uri_list = _split_form_list(material_uris)
+    target = TargetBrief(
+        title=target_title,
+        category=target_category,
+        selling_points=_split_form_list(selling_points),
+    )
+    material_library = material_analyzer.analyze(
+        AnalyzeMaterialsRequest(
+            project_id=safe_project_id,
+            target=target,
+            material_uris=material_uri_list,
+            use_mock=not material_uri_list,
+        )
+    )
+    try:
+        edit_plan = plan_generator.generate(
+            GeneratePlanRequest(
+                project_id=safe_project_id,
+                target_title=target.title,
+                variant=variant,
+                use_mock=False,
+            ),
+            structure_dna,
+            material_library,
+        )
+    except ValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    return PipelineResult(
+        structure_dna=structure_dna,
+        material_library=material_library,
+        edit_plan=edit_plan,
+        comparison_report=report_service.comparison_report(edit_plan),
+    )
+
+
+def _save_uploaded_sample(file: UploadFile, project_id: str, video_id: str) -> tuple[str, str, Path]:
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_SAMPLE_SUFFIXES:
         raise HTTPException(status_code=400, detail=f"Unsupported video suffix: {suffix or 'unknown'}")
@@ -79,21 +147,69 @@ def upload_sample(
     upload_dir = OUTPUTS_DIR / safe_project_id / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
     upload_path = upload_dir / f"{safe_video_id}{suffix}"
-    with upload_path.open("wb") as output:
-        shutil.copyfileobj(file.file, output)
 
+    max_bytes = get_settings().max_sample_upload_bytes
+    bytes_written = 0
+    with upload_path.open("wb") as output:
+        while chunk := file.file.read(UPLOAD_CHUNK_SIZE):
+            bytes_written += len(chunk)
+            if bytes_written > max_bytes:
+                output.close()
+                upload_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Sample video is too large; limit is {max_bytes // (1024 * 1024)}MB",
+                )
+            output.write(chunk)
+
+    if bytes_written == 0:
+        upload_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Uploaded video file is empty")
+
+    return safe_project_id, safe_video_id, upload_path
+
+
+def _analyze_saved_sample(
+    project_id: str,
+    video_id: str,
+    upload_path: Path,
+    analyzer: StructureAnalyzer,
+) -> StructureDNA:
     request = AnalyzeSampleRequest(
-        project_id=safe_project_id,
-        video_id=safe_video_id,
+        project_id=project_id,
+        video_id=video_id,
         source_uri=str(upload_path),
         use_mock=False,
     )
-    return analyzer.analyze(request)
+    try:
+        return _run_structure_analysis(request, analyzer)
+    except HTTPException as error:
+        if error.status_code in {400, 422}:
+            upload_path.unlink(missing_ok=True)
+        raise
+
+
+def _run_structure_analysis(request: AnalyzeSampleRequest, analyzer: StructureAnalyzer) -> StructureDNA:
+    try:
+        return analyzer.analyze(request)
+    except MediaProbeDependencyError as error:
+        raise HTTPException(status_code=500, detail=f"FFmpeg dependency unavailable: {error}") from error
+    except MediaProbeError as error:
+        raise HTTPException(status_code=422, detail=f"Invalid or unreadable video: {error}") from error
+    except AsrServiceError as error:
+        raise HTTPException(status_code=502, detail=f"ASR transcription failed: {error}") from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 def _safe_path_part(value: str, fallback: str) -> str:
     safe_value = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in value)
     return safe_value.strip("_") or fallback
+
+
+def _split_form_list(value: str) -> list[str]:
+    normalized = value.replace("，", ",").replace("\n", ",")
+    return [item.strip() for item in normalized.split(",") if item.strip()]
 
 
 @router.post("/api/materials/analyze", response_model=MaterialLibrary)
@@ -191,3 +307,63 @@ def run_material_demo_case(
         plan_generator,
         report_service,
     )
+
+
+def demo_target() -> TargetBrief:
+    return TargetBrief(
+        title="新品空气炸锅带货短视频",
+        category="product_talk",
+        selling_points=["少油", "外酥里嫩", "一键预热", "易清洗"],
+    )
+
+
+def execute_material_demo_pipeline(
+    request: MaterialPipelineRequest,
+    structure_analyzer: StructureAnalyzer,
+    material_analyzer: MaterialAnalyzer,
+    plan_generator: PlanGenerator,
+    report_service: ReportService,
+) -> PipelineResult:
+    structure_dna = structure_analyzer.analyze(
+        AnalyzeSampleRequest(
+            project_id=request.project_id,
+            video_id=request.sample_video_id,
+            use_mock=True,
+        )
+    )
+    material_library = material_analyzer.analyze(
+        AnalyzeMaterialsRequest(
+            project_id=request.project_id,
+            target=request.target,
+            material_uris=request.material_uris,
+            use_mock=False,
+        )
+    )
+    edit_plan = plan_generator.generate(
+        GeneratePlanRequest(
+            project_id=request.project_id,
+            target_title=request.target.title,
+            variant=request.variant,
+            use_mock=False,
+        ),
+        structure_dna,
+        material_library,
+    )
+    return PipelineResult(
+        structure_dna=structure_dna,
+        material_library=material_library,
+        edit_plan=edit_plan,
+        comparison_report=report_service.comparison_report(edit_plan),
+    )
+
+
+def load_material_demo_cases(repository: JsonRepository) -> Dict[str, Any]:
+    return repository.load_project_json("mocks/material_demo_cases.json")
+
+
+def find_material_demo_case(repository: JsonRepository, case_id: str) -> MaterialPipelineRequest:
+    payload = load_material_demo_cases(repository)
+    for item in payload.get("cases", []):
+        if item.get("case_id") == case_id:
+            return MaterialPipelineRequest(**item["request"])
+    raise HTTPException(status_code=404, detail=f"Unknown material demo case: {case_id}")

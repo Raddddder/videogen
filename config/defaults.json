@@ -56,12 +56,50 @@
   },
   "models": {
     "primary_provider": "ark",
-    "primary_model": "Doubao-Seed-2.0-lite",
+    "primary_model": "ep-20260508213828-7ntjl",
     "fallback_providers": [
       "openai",
       "gemini"
     ],
-    "request_timeout_sec": 60
+    "request_timeout_sec": 60,
+    "dashscope": {
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen-turbo"
+    }
+  },
+  "media": {
+    "ffmpeg_bin": "ffmpeg",
+    "ffprobe_bin": "ffprobe",
+    "probe_timeout_sec": 20,
+    "cover_timeout_sec": 30,
+    "scene_threshold": 0.32,
+    "min_scene_gap_sec": 0.7,
+    "max_scene_cuts": 24,
+    "max_sample_upload_bytes": 52428800
+  },
+  "asr": {
+    "timeout_sec": 60,
+    "audio_max_bytes": 52428800,
+    "siliconflow": {
+      "base_url": "https://api.siliconflow.cn/v1/audio/transcriptions",
+      "model": "FunAudioLLM/SenseVoiceSmall"
+    },
+    "dashscope": {
+      "base_url": "https://dashscope.aliyuncs.com/api/v1",
+      "model": "fun-asr",
+      "language_hints": [
+        "zh",
+        "en"
+      ],
+      "poll_interval_sec": 1.0
+    },
+    "dashscope_realtime": {
+      "websocket_url": "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+      "model": "fun-asr-realtime",
+      "language_hints": [
+        "zh"
+      ]
+    }
   },
   "material_analysis": {
     "default_duration_sec": {
