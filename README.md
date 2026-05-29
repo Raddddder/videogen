@@ -8,6 +8,38 @@
 - 吴隆正：模块 B/C，素材理解、缺口识别、方案生成、预览/导出。
 - 管振凯：模块 D，前端产品、结构可视化、演示链路。
 
+## 当前进度（更新于 2026-05-29）
+
+主链路已从「mock 流水线」升级为**真实可跑、可演示的创作平台**。以下能力均已并入 `main`，并通过 `tsc` / `vite build` / `scripts/validate_contracts.py` / 真实端到端验证。
+
+### 已完成
+
+- **Module A 样例解析（真实）**：ffprobe 元信息、ffmpeg 镜头切分、ASR（SiliconFlow SenseVoice）、LLM 结构角色判断；上传真实视频即可解析为 `StructureDNA`（含 `confidence` / `analysis_reason`）。
+- **Module B 素材理解（真实 + 视觉模型）**：`MaterialAnalyzer.analyze_files()` 用 ffprobe 得到真实时长/画幅/质量/裁剪风险，再用 VLM（SiliconFlow `Qwen3-VL`）给镜头类型、语义角色、标签打标；任何失败自动回退规则版。`Material` 新增 `preview_url` / `analysis_source`。
+- **Module C 结构迁移**：真实槽位匹配、缺口识别、补全策略；多版本（`balanced` / `high_click` / `high_conversion`）在打分上**真正差异化**（高点击重节奏、高转化重证明/CTA/素材），不再只是改时长。
+- **Module D 前端**：Apple 风格重设计；用户素材上传 + 真实预览缩略图 + 来源徽章；结果时间线预览播放器；**版本对比页**；**一键导出真实 9:16 mp4**。
+- **真实 mp4 导出**：`MediaRenderer` 用 ffmpeg 把 Edit Plan 合成 1080×1920 H.264 成片（匹配片段裁剪、图片定格、缺口占位卡 + 静音轨拼接）。
+
+### 新增接口
+
+- `POST /api/materials/upload` — 上传用户素材文件 → 真实 `MaterialLibrary`
+- `POST /api/pipeline/upload-all` — 样例视频 + 用户素材一把跑完 A→B→C
+- `POST /api/pipeline/compare` — 返回三个 variant 的方案用于并排对比
+- `POST /api/render/preview` — 从 `PipelineResult` 合成 `preview.mp4`
+
+### 运行前提（重要）
+
+- **Python 3.10+**：Module A 用了 3.10 语法（`int | None` 等），`backend/.venv` 必须用 3.10+ 重建，否则后端无法 import。
+- **ffmpeg / ffprobe**：`brew install ffmpeg`（真实解析、抽帧、合成都依赖）。
+- **`.env`**：`ASR_PROVIDER` / `LLM_PROVIDER` / `MATERIAL_VLM_*`，密钥只进 `.env`（见 `.env.example`）。当前默认 SiliconFlow 一把 key 同时驱动 ASR + LLM + VLM。
+- 前端 `frontend/.env` 设 `VITE_API_BASE_URL=http://127.0.0.1:8000`。
+
+### 仍待办 / 可选
+
+- 接 **DashScope**（`fun-asr`，有句级时间戳）让 Module A 的 LLM 结构判断真正生效；当前 SiliconFlow ASR 无时间戳，结构判断退化为按时长兜底。
+- mp4 **烧录中文字幕**（本地可用 PingFang 字体）。
+- 真实文件对象存储 / 异步 job / 正式部署（按既定策略暂不做）。
+
 ## 比赛阶段 TODO
 
 服务器部署先不作为当前比赛交付项。当前阶段的目标是把本地 demo 链路跑稳，并把未来上线需要的 Docker、环境变量和部署文档保留下来。
@@ -20,6 +52,8 @@
 - 正式上线再补：文件对象存储、异步任务队列、生产 CORS 域名、ASR/LLM provider key、域名/HTTPS、日志和监控。
 
 ### 吴隆正 / wulongzheng 待办
+
+> 状态：下表 P0 全部完成，P1 大部分完成（provider 配置抽象、对比报告/剪辑指导已落地）；最新进度见上方「当前进度」。剩 P2（异步 job、正式部署）按既定策略暂缓。
 
 | 优先级 | 工作项 | 输入 | 输出 | 验收标准 |
 | --- | --- | --- | --- | --- |
@@ -380,22 +414,24 @@ outputs/case_001/
 
 ## 快速启动
 
+前置依赖：**Python 3.10+** 和 **ffmpeg**（`brew install ffmpeg`）。复制 `.env.example` 为 `.env` 并填好 provider key。
+
 后端：
 
 ```bash
 cd /Users/longzheng.wu/Desktop/videogen
-python3 -m venv backend/.venv
+python3.10 -m venv backend/.venv          # 必须 3.10+，3.9 会无法 import
 source backend/.venv/bin/activate
 pip install -r backend/requirements.txt
-npm run backend:dev
+PYTHONPATH=backend python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-前端：
+前端（先建 `frontend/.env`，内容 `VITE_API_BASE_URL=http://127.0.0.1:8000`）：
 
 ```bash
 cd /Users/longzheng.wu/Desktop/videogen
 npm --prefix frontend install
-npm run frontend:dev
+npm --prefix frontend run dev             # http://127.0.0.1:5173
 ```
 
 Remotion Studio：
@@ -469,6 +505,23 @@ curl http://127.0.0.1:8000/api/pipeline/material-demo/cases
 # 8. 运行某个内置 case
 curl -X POST http://127.0.0.1:8000/api/pipeline/material-demo/cases/air_fryer_balanced \
   -H 'Content-Type: application/json'
+
+# 9. 真实链路：上传用户素材（多文件）-> 真实 MaterialLibrary
+curl -X POST http://127.0.0.1:8000/api/materials/upload \
+  -F project_id=case_real -F target_title=空气炸锅带货 -F selling_points=少油,外酥里嫩 \
+  -F files=@your_clip.mp4 -F files=@your_image.jpg -F files=@selling_copy.txt
+
+# 10. 真实链路：样例视频 + 用户素材一把跑完 A->B->C
+curl -X POST http://127.0.0.1:8000/api/pipeline/upload-all \
+  -F project_id=case_real -F video_id=s1 -F variant=balanced \
+  -F sample=@sample.mov -F materials=@your_clip.mp4 -F materials=@your_image.jpg
+
+# 11. 三版方案并排对比
+curl -X POST http://127.0.0.1:8000/api/pipeline/compare
+
+# 12. 从方案合成真实 9:16 preview.mp4（body 为 PipelineResult）
+curl -X POST http://127.0.0.1:8000/api/render/preview \
+  -H 'Content-Type: application/json' -d @pipeline_result.json
 ```
 
 内置 case ID：
