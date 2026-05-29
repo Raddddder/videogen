@@ -2,6 +2,17 @@ import type {MaterialLibrary, PipelineResult, StructureDNA} from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
+/** Resolve a backend-relative asset path (e.g. /outputs/... or /public/...) against the API host. */
+export function assetUrl(path?: string | null): string | undefined {
+  if (!path) {
+    return undefined;
+  }
+  if (/^(https?:|blob:|data:)/.test(path)) {
+    return path;
+  }
+  return `${API_BASE_URL}${path}`;
+}
+
 export type TargetOptions = {
   projectId: string;
   targetTitle?: string;
