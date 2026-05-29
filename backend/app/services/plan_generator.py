@@ -51,7 +51,7 @@ class PlanGenerator:
 
         timeline, match_scores = self._build_timeline(request, resolved_structure, resolved_materials)
         missing_slots = self._build_missing_slots(timeline)
-        overall_score = self._overall_score(timeline, match_scores)
+        overall_score = self._overall_score(timeline, match_scores, request.variant)
 
         target_title = request.target_title
         if resolved_materials.target and resolved_materials.target.title:
@@ -346,21 +346,50 @@ class PlanGenerator:
         }
         return impacts.get(item.function, "该结构槽位的表达强度会下降")
 
-    def _overall_score(self, timeline: List[TimelineItem], candidates: Dict[str, MatchCandidate]) -> OverallScore:
+    # Per-variant emphasis: which structure functions each version optimises for.
+    # high_click front-loads attention (hook/transition + pacing); high_conversion
+    # leans on trust and closing (proof/cta + material fit).
+    _VARIANT_FOCUS: Dict[str, Dict[str, float]] = {
+        "balanced": {},
+        "high_click": {"hook": 1.18, "transition": 1.1, "setup": 1.05},
+        "high_conversion": {"proof": 1.18, "cta": 1.18, "solution": 1.06},
+        "fast_pacing": {"hook": 1.1, "transition": 1.12},
+        "premium": {"proof": 1.12, "solution": 1.08},
+    }
+    _VARIANT_DIMENSION_BOOST: Dict[str, Dict[str, float]] = {
+        "high_click": {"pacing_fit": 0.06},
+        "high_conversion": {"material_fit": 0.05, "structure_consistency": 0.03},
+        "fast_pacing": {"pacing_fit": 0.08},
+        "premium": {"material_fit": 0.04},
+    }
+
+    def _overall_score(
+        self,
+        timeline: List[TimelineItem],
+        candidates: Dict[str, MatchCandidate],
+        variant: str = "balanced",
+    ) -> OverallScore:
         if not timeline:
             return OverallScore(structure_consistency=0.0, material_fit=0.0, pacing_fit=0.0)
 
+        focus = self._VARIANT_FOCUS.get(variant, {})
         status_weights = {"matched": 1.0, "supplemented": 0.82, "weak_match": 0.62, "missing": 0.25}
-        structure_consistency = sum(status_weights[item.slot_status] for item in timeline) / len(timeline)
+        # Function-weighted so each variant rewards the segments it cares about.
+        weighted_sum = sum(status_weights[item.slot_status] * focus.get(item.function, 1.0) for item in timeline)
+        weight_total = sum(focus.get(item.function, 1.0) for item in timeline)
+        structure_consistency = weighted_sum / weight_total if weight_total else 0.0
         material_fit = sum(candidates[item.segment_id].score if item.segment_id in candidates else 0.2 for item in timeline) / len(timeline)
         pacing_fit = sum(
             candidates[item.segment_id].components["duration_match"] if item.segment_id in candidates else 0.35
             for item in timeline
         ) / len(timeline)
+
+        boost = self._VARIANT_DIMENSION_BOOST.get(variant, {})
+        clamp = lambda value: round(min(max(value, 0.0), 1.0), 2)
         return OverallScore(
-            structure_consistency=round(structure_consistency, 2),
-            material_fit=round(material_fit, 2),
-            pacing_fit=round(pacing_fit, 2),
+            structure_consistency=clamp(structure_consistency + boost.get("structure_consistency", 0.0)),
+            material_fit=clamp(material_fit + boost.get("material_fit", 0.0)),
+            pacing_fit=clamp(pacing_fit + boost.get("pacing_fit", 0.0)),
         )
 
     def _source_range(self, material: Optional[Material], target_duration: float) -> Optional[Tuple[float, float]]:

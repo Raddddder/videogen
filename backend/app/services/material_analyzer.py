@@ -1,22 +1,29 @@
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Literal
+from typing import Dict, Iterable, List, Literal, Optional
 from urllib.parse import unquote, urlparse
 
 from app.core.paths import PROJECT_ROOT
 from app.models.contracts import AnalyzeMaterialsRequest, Material, MaterialLibrary, TargetBrief
 from app.services.json_repository import JsonRepository
+from app.services.material_vlm import MaterialVlmClient
+from app.services.media_probe import MediaProbe, MediaProbeError
 
 
 MaterialType = Literal["video_clip", "image", "copy", "audio"]
 
+_ASPECT_TARGETS = {"9:16": 9 / 16, "4:5": 4 / 5, "1:1": 1.0, "16:9": 16 / 9}
+
 
 class MaterialAnalyzer:
-    """Module B: rule-based user material understanding.
+    """Module B: user material understanding.
 
-    The current implementation intentionally uses deterministic heuristics so
-    the competition demo can run without paid model calls. Model providers can
-    later replace individual inference steps behind the same contract.
+    Two paths share one contract:
+    - analyze(): legacy heuristic path (filename/URI) that keeps the demo
+      running without media files or paid calls.
+    - analyze_files(): real path for uploaded files. ffprobe gives true metrics
+      (duration / dimensions / aspect / quality) and an optional vision model
+      tags semantics; both gracefully fall back to heuristics.
     """
 
     VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".webm", ".mkv"}
@@ -24,9 +31,16 @@ class MaterialAnalyzer:
     COPY_EXTENSIONS = {".txt", ".md", ".json", ".csv"}
     AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac"}
 
-    def __init__(self, repository: JsonRepository) -> None:
+    def __init__(
+        self,
+        repository: JsonRepository,
+        media_probe: Optional[MediaProbe] = None,
+        vlm: Optional[MaterialVlmClient] = None,
+    ) -> None:
         self.repository = repository
         self.config = repository.config.get("material_analysis", {})
+        self.media_probe = media_probe or MediaProbe()
+        self.vlm = vlm or MaterialVlmClient()
 
     def analyze(self, request: AnalyzeMaterialsRequest) -> MaterialLibrary:
         if request.use_mock and not request.material_uris:
@@ -45,6 +59,140 @@ class MaterialAnalyzer:
             target=request.target,
             materials=materials,
         )
+
+    def analyze_files(
+        self,
+        project_id: str,
+        target: TargetBrief,
+        file_paths: Iterable[Path],
+    ) -> MaterialLibrary:
+        """Real path for uploaded material files."""
+        materials = [
+            self._analyze_file(index=index, path=Path(path), target=target)
+            for index, path in enumerate(file_paths, start=1)
+        ]
+        return MaterialLibrary(
+            schema_version="1.0",
+            project_id=project_id,
+            target=target,
+            materials=materials,
+        )
+
+    def _analyze_file(self, index: int, path: Path, target: TargetBrief) -> Material:
+        file_name = path.name
+        material_type = self._infer_type(file_name)
+        preview_url = self._preview_url(path) if material_type != "copy" else None
+
+        width = height = 0
+        duration_sec = 0.0
+        if material_type in {"video_clip", "audio"}:
+            try:
+                info = self.media_probe.inspect(path)
+                duration_sec = info.duration_sec
+                width, height = info.width, info.height
+            except MediaProbeError:
+                pass
+        elif material_type == "image":
+            try:
+                width, height = self.media_probe.probe_dimensions(path)
+            except MediaProbeError:
+                pass
+
+        reference_text = self._reference_text(str(path)) if material_type == "copy" else ""
+        source_text = " ".join([file_name, reference_text]).lower()
+        aspect_ratio = (
+            self._aspect_from_dims(width, height)
+            if width and height
+            else self._infer_aspect_ratio(source_text, material_type)
+        )
+
+        vlm_result = None
+        if material_type in {"video_clip", "image"}:
+            frame = self._frame_for_vlm(path, material_type, duration_sec)
+            if frame is not None:
+                vlm_result = self.vlm.describe_image(frame)
+
+        if vlm_result:
+            analysis_source = "vlm"
+            semantic_role = (
+                vlm_result["semantic_role"]
+                if vlm_result["semantic_role"] != "unknown"
+                else self._infer_role(source_text, material_type)
+            )
+            shot_type = vlm_result["shot_type"] or self._infer_shot_type(
+                source_text, semantic_role, material_type
+            )
+            tags = sorted(
+                set(vlm_result["tags"])
+                | set(self._infer_tags(source_text, semantic_role, material_type, target.selling_points))
+            )
+            vlm_summary = vlm_result["summary"]
+        else:
+            analysis_source = "rule"
+            semantic_role = self._infer_role(source_text, material_type)
+            shot_type = self._infer_shot_type(source_text, semantic_role, material_type)
+            tags = self._infer_tags(source_text, semantic_role, material_type, target.selling_points)
+            vlm_summary = ""
+
+        quality_score = (
+            self._quality_from_resolution(width, height)
+            if width and height
+            else self._infer_quality_score(source_text, material_type, aspect_ratio)
+        )
+        transcript = self._transcript(reference_text, source_text, material_type)
+        if vlm_summary and not transcript.strip():
+            transcript = vlm_summary
+
+        return Material(
+            material_id=f"mat_{index:03d}",
+            type=material_type,
+            file_name=file_name,
+            duration_sec=duration_sec,
+            aspect_ratio=aspect_ratio,
+            usable_ranges=self._usable_ranges(material_type, duration_sec),
+            shot_type=shot_type,
+            semantic_role=semantic_role,
+            tags=tags,
+            emotion_score=self._infer_emotion_score(source_text, semantic_role),
+            quality_score=quality_score,
+            crop_risk=self._infer_crop_risk(aspect_ratio),
+            transcript=transcript,
+            key_visuals=self._key_visuals(source_text, tags),
+            preview_url=preview_url,
+            analysis_source=analysis_source,
+        )
+
+    def _frame_for_vlm(self, path: Path, material_type: MaterialType, duration_sec: float) -> Optional[Path]:
+        if material_type == "image":
+            return path
+        try:
+            frame_path = path.parent / f".{path.stem}_frame.jpg"
+            return self.media_probe.extract_cover(path, frame_path, duration_sec or 1.0)
+        except MediaProbeError:
+            return None
+
+    def _preview_url(self, path: Path) -> Optional[str]:
+        try:
+            relative = path.resolve().relative_to(PROJECT_ROOT.resolve())
+        except ValueError:
+            return None
+        return "/" + relative.as_posix()
+
+    @staticmethod
+    def _aspect_from_dims(width: int, height: int) -> str:
+        ratio = width / height
+        return min(_ASPECT_TARGETS, key=lambda label: abs(_ASPECT_TARGETS[label] - ratio))
+
+    @staticmethod
+    def _quality_from_resolution(width: int, height: int) -> float:
+        shorter = min(width, height)
+        if shorter >= 1080:
+            return 0.92
+        if shorter >= 720:
+            return 0.82
+        if shorter >= 480:
+            return 0.7
+        return 0.55
 
     def _analyze_uri(self, index: int, uri: str, target: TargetBrief) -> Material:
         file_name = self._file_name_from_uri(uri)

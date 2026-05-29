@@ -145,6 +145,15 @@ class Settings:
             str(dashscope_config.get("poll_interval_sec", 1.0)),
         ))
 
+        # Material understanding vision model (Module B). Reuses the LLM key/base
+        # by default so a single OpenAI-compatible provider can power both.
+        self.material_vlm_model = os.getenv("MATERIAL_VLM_MODEL", "Qwen/Qwen3-VL-8B-Instruct")
+        self.material_vlm_api_key = os.getenv("MATERIAL_VLM_API_KEY", self.llm_api_key)
+        self.material_vlm_base_url = os.getenv("MATERIAL_VLM_BASE_URL", self.llm_base_url)
+        self.material_vlm_timeout_sec = int(os.getenv("MATERIAL_VLM_TIMEOUT_SEC", "60"))
+        _vlm_default = "true" if self.material_vlm_api_key and self.material_vlm_base_url else "false"
+        self.material_vlm_enabled = self._parse_bool(os.getenv("MATERIAL_VLM_ENABLED", _vlm_default))
+
     @staticmethod
     def _load_json(path: Path) -> Dict[str, Any]:
         with path.open("r", encoding="utf-8") as file:

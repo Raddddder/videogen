@@ -79,6 +79,27 @@ class MediaProbe:
             has_audio=audio_stream is not None,
         )
 
+    def probe_dimensions(self, source_path: Path) -> tuple[int, int]:
+        """Return (width, height) for an image or video without requiring duration."""
+        payload = self._run_json(
+            [
+                self.ffprobe_bin,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-print_format",
+                "json",
+                "-show_streams",
+                str(source_path),
+            ]
+        )
+        streams = payload.get("streams", [])
+        video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+        if not video_stream:
+            raise MediaProbeError(f"No image/video stream found in {source_path.name}")
+        return int(video_stream.get("width", 0)), int(video_stream.get("height", 0))
+
     def extract_cover(self, source_path: Path, output_path: Path, duration_sec: float) -> Path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         seek_at = min(max(duration_sec * 0.12, 0.1), 1.5)

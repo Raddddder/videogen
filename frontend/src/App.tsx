@@ -1,9 +1,10 @@
-import {useMemo, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import type {ReactNode} from "react";
 import {Button, Card, Input, Progress, Radio, Slider, Tag, Textarea} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
-import {runDemoPipeline, uploadSamplePipeline} from "./api";
+import {assetUrl, compareVariants, renderPreview, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
+import type {VariantComparison} from "./api";
 import {demoSessions} from "./demoSessions";
 import type {DemoSession} from "./demoSessions";
 import {fallbackPipeline} from "./mockState";
@@ -16,7 +17,7 @@ import type {
   TimelineItem,
 } from "./types";
 
-type ViewKey = "overview" | "analysis" | "materials" | "plan" | "acceptance";
+type ViewKey = "overview" | "analysis" | "materials" | "plan" | "compare" | "acceptance";
 type VariantKey = "balanced" | "high_click" | "high_conversion";
 type SessionStatus = DemoSession["status"];
 type SessionStage = DemoSession["stage"];
@@ -118,6 +119,7 @@ const viewTabs: Array<{key: ViewKey; label: string}> = [
   {key: "analysis", label: "样例分析"},
   {key: "materials", label: "素材匹配"},
   {key: "plan", label: "方案输出"},
+  {key: "compare", label: "版本对比"},
   {key: "acceptance", label: "验收清单"},
 ];
 
@@ -221,7 +223,9 @@ export function App() {
   const [uploadedSample, setUploadedSample] = useState<SamplePreview | undefined>();
   const [activeVariant, setActiveVariant] = useState<VariantKey>(demoSessions[0].variant);
   const [draft, setDraft] = useState<WorkbenchDraft>(defaultDraft);
+  const [materialUploading, setMaterialUploading] = useState(false);
   const sampleInputRef = useRef<HTMLInputElement>(null);
+  const materialInputRef = useRef<HTMLInputElement>(null);
 
   const materialById = useMemo(() => {
     return new Map(data.material_library.materials.map((material) => [material.material_id, material]));
@@ -324,6 +328,29 @@ export function App() {
     }
   };
 
+  const handleSelectMaterials = async (files: File[]) => {
+    if (!files.length) {
+      return;
+    }
+    setMaterialUploading(true);
+    setApiState(`analyzing ${files.length} materials`);
+    try {
+      const library = await uploadMaterials(files, {
+        projectId: data.edit_plan.project_id || "case_001",
+        targetTitle: targetTitle,
+        targetCategory: data.material_library.target?.category,
+        sellingPoints: data.material_library.target?.selling_points,
+      });
+      setData((current) => ({...current, material_library: library}));
+      setApiState(`materials analyzed (${library.materials.length})`);
+      setActiveView("materials");
+    } catch (error) {
+      setApiState(error instanceof Error ? error.message : "material upload failed");
+    } finally {
+      setMaterialUploading(false);
+    }
+  };
+
   return (
     <main className="app-shell">
       <input
@@ -337,6 +364,18 @@ export function App() {
           if (file) {
             void handleSelectSample(file);
           }
+        }}
+      />
+      <input
+        ref={materialInputRef}
+        accept="video/*,image/*,.txt,.md,.csv,audio/*"
+        className="hidden-file-input"
+        multiple
+        type="file"
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = "";
+          void handleSelectMaterials(files);
         }}
       />
       <aside className="sidebar">
@@ -454,7 +493,13 @@ export function App() {
           <AnalysisView data={data} totalDuration={totalSourceDuration} />
         )}
         {activeView === "materials" && (
-          <MaterialsView data={data} activeSegmentId={activeSegmentId} setActiveSegmentId={setActiveSegmentId} />
+          <MaterialsView
+            data={data}
+            activeSegmentId={activeSegmentId}
+            setActiveSegmentId={setActiveSegmentId}
+            materialUploading={materialUploading}
+            onUploadMaterials={() => materialInputRef.current?.click()}
+          />
         )}
         {activeView === "plan" && (
           <PlanView
@@ -471,6 +516,9 @@ export function App() {
             onDraftChange={(field, value) => setDraft((current) => ({...current, [field]: value}))}
             setActiveSegmentId={setActiveSegmentId}
           />
+        )}
+        {activeView === "compare" && (
+          <CompareView onState={setApiState} />
         )}
         {activeView === "acceptance" && (
           <AcceptanceView
@@ -983,26 +1031,65 @@ function AnalysisView({data, totalDuration}: {data: PipelineResult; totalDuratio
   );
 }
 
+const materialSourceLabels: Record<NonNullable<Material["analysis_source"]>, string> = {
+  vlm: "AI 视觉识别",
+  rule: "规则推断",
+  mock: "示例数据",
+};
+
 function MaterialsView({
   data,
   activeSegmentId,
   setActiveSegmentId,
+  materialUploading,
+  onUploadMaterials,
 }: {
   data: PipelineResult;
   activeSegmentId: string;
   setActiveSegmentId: (id: string) => void;
+  materialUploading: boolean;
+  onUploadMaterials: () => void;
 }) {
   return (
     <div className="panel-grid">
       <Card bordered className="panel wide">
-        <PanelTitle eyebrow="Module B" title="素材标签库" />
+        <div className="material-head-row">
+          <PanelTitle eyebrow="Module B" title="素材标签库" />
+          <Button
+            icon={<CloudUploadIcon />}
+            loading={materialUploading}
+            theme="primary"
+            variant="outline"
+            onClick={onUploadMaterials}
+          >
+            {materialUploading ? "AI 解析中..." : "上传我的素材"}
+          </Button>
+        </div>
         <div className="material-grid">
-          {data.material_library.materials.map((material) => (
+          {data.material_library.materials.map((material) => {
+            const preview = assetUrl(material.preview_url);
+            return (
             <article key={material.material_id} className="material-card">
+              {preview && material.type === "video_clip" && (
+                <video className="material-preview" src={preview} muted loop playsInline preload="metadata" />
+              )}
+              {preview && material.type === "image" && (
+                <img className="material-preview" src={preview} alt={material.file_name} />
+              )}
               <div className="material-head">
                 <b>{material.file_name}</b>
                 <span>{Math.round(material.quality_score * 100)}%</span>
               </div>
+              {material.analysis_source && (
+                <Tag
+                  shape="round"
+                  size="small"
+                  theme={material.analysis_source === "vlm" ? "success" : "default"}
+                  variant="light"
+                >
+                  {materialSourceLabels[material.analysis_source]}
+                </Tag>
+              )}
               <p>{material.transcript || material.shot_type}</p>
               <div className="material-meta">
                 <span>{material.type}</span>
@@ -1015,7 +1102,8 @@ function MaterialsView({
                 ))}
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       </Card>
 
@@ -1053,6 +1141,123 @@ function MaterialsView({
   );
 }
 
+function RenderExport({data}: {data: PipelineResult}) {
+  const [rendering, setRendering] = useState(false);
+  const [url, setUrl] = useState<string | undefined>();
+  const [error, setError] = useState("");
+
+  const onRender = async () => {
+    setRendering(true);
+    setError("");
+    setUrl(undefined);
+    try {
+      const res = await renderPreview(data);
+      setUrl(`${assetUrl(res.preview_url) ?? ""}?t=${Date.now()}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "render failed");
+    } finally {
+      setRendering(false);
+    }
+  };
+
+  return (
+    <div className="render-export">
+      <Button
+        icon={<RocketIcon />}
+        loading={rendering}
+        theme="primary"
+        variant="outline"
+        onClick={onRender}
+      >
+        {rendering ? "合成中..." : "导出 mp4"}
+      </Button>
+      {url && (
+        <a className="render-link" href={url} target="_blank" rel="noreferrer">
+          ✓ 查看成片
+        </a>
+      )}
+      {error && <span className="render-error">需后端运行</span>}
+    </div>
+  );
+}
+
+function TimelinePreview({data, totalDuration}: {data: PipelineResult; totalDuration: number}) {
+  const [playing, setPlaying] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const timeline = data.edit_plan.timeline;
+  const materials = useMemo(
+    () => new Map(data.material_library.materials.map((m) => [m.material_id, m])),
+    [data.material_library.materials],
+  );
+
+  useEffect(() => {
+    if (!playing) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      setElapsed((prev) => {
+        const next = Number((prev + 0.1).toFixed(1));
+        return next >= totalDuration ? 0 : next;
+      });
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [playing, totalDuration]);
+
+  const current =
+    timeline.find((item) => elapsed >= item.target_time_range[0] && elapsed < item.target_time_range[1]) ??
+    timeline[0];
+  const material = current?.selected_material_id ? materials.get(current.selected_material_id) : undefined;
+  const preview = assetUrl(material?.preview_url);
+  const subtitle = current?.packaging?.subtitle ?? current?.script ?? "";
+  const titleBar = current?.packaging?.title_bar_text ?? "";
+
+  return (
+    <div className="preview-player">
+      <div className={`preview-stage ${current ? current.slot_status : ""}`}>
+        {preview && material?.type === "video_clip" && (
+          <video className="preview-media" src={preview} muted loop autoPlay playsInline preload="metadata" />
+        )}
+        {preview && material?.type === "image" && (
+          <img className="preview-media" src={preview} alt={material.file_name} />
+        )}
+        {!preview && <div className="preview-placeholder">AIGC 待补 · {current ? functionLabels[current.function] : ""}</div>}
+        <div className="preview-overlay">
+          {titleBar && <div className="preview-title-bar">{titleBar}</div>}
+          <div className="preview-function">{current ? functionLabels[current.function] : ""}</div>
+          {subtitle && <div className="preview-subtitle">{subtitle}</div>}
+        </div>
+      </div>
+      <div className="preview-controls">
+        <Button
+          icon={<PlayCircleIcon />}
+          shape="circle"
+          theme="primary"
+          variant={playing ? "base" : "outline"}
+          onClick={() => setPlaying((value) => !value)}
+        />
+        <div className="preview-track">
+          {timeline.map((item) => {
+            const start = (item.target_time_range[0] / totalDuration) * 100;
+            const width = ((item.target_time_range[1] - item.target_time_range[0]) / totalDuration) * 100;
+            return (
+              <button
+                key={item.target_segment_id}
+                className={`preview-seg ${item.slot_status} ${current?.target_segment_id === item.target_segment_id ? "active" : ""}`}
+                style={{left: `${start}%`, width: `${Math.max(width, 4)}%`}}
+                title={functionLabels[item.function]}
+                type="button"
+                onClick={() => setElapsed(item.target_time_range[0])}
+              />
+            );
+          })}
+          <span className="preview-playhead" style={{left: `${(elapsed / totalDuration) * 100}%`}} />
+        </div>
+        <span className="preview-time">{elapsed.toFixed(1)} / {totalDuration.toFixed(1)}s</span>
+      </div>
+    </div>
+  );
+}
+
 function PlanView({
   data,
   totalDuration,
@@ -1083,6 +1288,14 @@ function PlanView({
   return (
     <div className="plan-layout">
       <div className="plan-main">
+        <Card bordered className="panel">
+          <div className="material-head-row">
+            <PanelTitle eyebrow="Preview" title="结果预览" />
+            <RenderExport data={data} />
+          </div>
+          <TimelinePreview data={data} totalDuration={totalDuration} />
+        </Card>
+
         <Card bordered className="panel">
           <PanelTitle eyebrow="Module C" title="新方案时间线" />
           <Timeline
@@ -1211,6 +1424,101 @@ function PlanRow({item, onSelect}: {item: TimelineItem; onSelect: (id: string) =
       <p>{item.script}</p>
       <small>{item.explanation}</small>
     </button>
+  );
+}
+
+function CompareView({onState}: {onState: (state: string) => void}) {
+  const [comparison, setComparison] = useState<VariantComparison | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    compareVariants()
+      .then((res) => {
+        if (active) {
+          setComparison(res);
+          onState("variants compared");
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof Error ? err.message : "compare failed");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [onState]);
+
+  if (loading) {
+    return <div className="compare-hint">正在生成三个版本的方案…</div>;
+  }
+  if (error || !comparison) {
+    return <div className="compare-hint">版本对比需要后端运行（{error || "无数据"}）。先点左上角“跑通 Demo 管线”。</div>;
+  }
+
+  return (
+    <div className="compare-grid">
+      {comparison.variants.map(({variant, edit_plan}) => {
+        const config = variantConfigs.find((item) => item.id === variant);
+        const counts = statusOrder.reduce<Record<SlotStatus, number>>(
+          (acc, status) => {
+            acc[status] = edit_plan.timeline.filter((item) => item.slot_status === status).length;
+            return acc;
+          },
+          {matched: 0, weak_match: 0, missing: 0, supplemented: 0},
+        );
+        const score = edit_plan.overall_score;
+        return (
+          <Card bordered className="panel compare-col" key={variant}>
+            <PanelTitle eyebrow={variant} title={config?.label ?? variant} />
+            <p className="compare-focus">{config?.focus}</p>
+            <div className="compare-bars">
+              <ScoreBar label="结构一致" value={score.structure_consistency} />
+              <ScoreBar label="素材匹配" value={score.material_fit} />
+              <ScoreBar label="节奏匹配" value={score.pacing_fit} />
+            </div>
+            <div className="compare-status">
+              {statusOrder.map((status) => (
+                <Tag key={status} shape="round" theme={statusThemes[status]} variant="light">
+                  {statusLabels[status]} {counts[status]}
+                </Tag>
+              ))}
+            </div>
+            <div className="compare-track">
+              {edit_plan.timeline.map((item) => (
+                <span key={item.target_segment_id} className={`compare-seg ${item.slot_status}`}>
+                  {functionLabels[item.function]}
+                </span>
+              ))}
+            </div>
+            <div className="compare-config">
+              <Info label="脚本基调" value={config?.scriptTone ?? "-"} />
+              <Info label="节奏" value={config?.pacing ?? "-"} />
+              <Info label="包装" value={config?.packaging ?? "-"} />
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScoreBar({label, value}: {label: string; value: number}) {
+  return (
+    <div className="score-bar">
+      <span>{label}</span>
+      <div className="score-bar-track">
+        <span style={{width: `${Math.round(value * 100)}%`}} />
+      </div>
+      <b>{Math.round(value * 100)}</b>
+    </div>
   );
 }
 

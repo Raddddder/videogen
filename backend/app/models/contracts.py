@@ -99,6 +99,8 @@ class Material(BaseModel):
     crop_risk: Literal["low", "medium", "high"]
     transcript: str = ""
     key_visuals: List[str] = Field(default_factory=list)
+    preview_url: Optional[str] = None
+    analysis_source: Literal["mock", "rule", "vlm"] = "rule"
 
 
 class MaterialLibrary(BaseModel):

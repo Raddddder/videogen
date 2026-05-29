@@ -84,6 +84,8 @@ export type Material = {
   crop_risk: "low" | "medium" | "high";
   transcript: string;
   key_visuals?: string[];
+  preview_url?: string | null;
+  analysis_source?: "mock" | "rule" | "vlm";
 };
 
 export type MaterialLibrary = {
