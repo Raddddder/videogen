@@ -1,6 +1,74 @@
-import type {PipelineResult, StructureDNA} from "./types";
+import type {MaterialLibrary, PipelineResult, StructureDNA} from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+
+export type TargetOptions = {
+  projectId: string;
+  targetTitle?: string;
+  targetCategory?: string;
+  sellingPoints?: string[];
+};
+
+function appendTarget(formData: FormData, options: TargetOptions): void {
+  formData.append("project_id", options.projectId);
+  if (options.targetTitle) {
+    formData.append("target_title", options.targetTitle);
+  }
+  if (options.targetCategory) {
+    formData.append("target_category", options.targetCategory);
+  }
+  if (options.sellingPoints?.length) {
+    formData.append("selling_points", options.sellingPoints.join(","));
+  }
+}
+
+/** Module B: upload real user material files, get a true MaterialLibrary back. */
+export async function uploadMaterials(
+  files: File[],
+  options: TargetOptions,
+): Promise<MaterialLibrary> {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  appendTarget(formData, options);
+
+  const response = await fetch(`${API_BASE_URL}/api/materials/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Material upload failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/** Full real pipeline: sample video (A) + user materials (B) -> plan (C). */
+export async function uploadAllPipeline(
+  sample: File,
+  materials: File[],
+  options: TargetOptions & {videoId: string; variant?: string},
+): Promise<PipelineResult> {
+  const formData = new FormData();
+  formData.append("sample", sample);
+  materials.forEach((file) => formData.append("materials", file));
+  formData.append("video_id", options.videoId);
+  if (options.variant) {
+    formData.append("variant", options.variant);
+  }
+  appendTarget(formData, options);
+
+  const response = await fetch(`${API_BASE_URL}/api/pipeline/upload-all`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Full pipeline failed: ${response.status}`);
+  }
+
+  return response.json();
+}
 
 export async function runDemoPipeline(): Promise<PipelineResult> {
   const response = await fetch(`${API_BASE_URL}/api/pipeline/demo`, {

@@ -3,6 +3,7 @@ from app.core.settings import get_settings
 from app.services.json_repository import JsonRepository
 from app.services.asr_service import AsrService
 from app.services.material_analyzer import MaterialAnalyzer
+from app.services.material_vlm import MaterialVlmClient
 from app.services.media_probe import MediaProbe
 from app.services.plan_generator import PlanGenerator
 from app.services.report_service import ReportService
@@ -37,7 +38,18 @@ def build_structure_analyzer() -> StructureAnalyzer:
 
 
 def build_material_analyzer() -> MaterialAnalyzer:
-    return MaterialAnalyzer(build_repository())
+    return MaterialAnalyzer(build_repository(), build_media_probe(), build_material_vlm())
+
+
+def build_material_vlm() -> MaterialVlmClient:
+    settings = get_settings()
+    return MaterialVlmClient(
+        enabled=settings.material_vlm_enabled,
+        api_key=settings.material_vlm_api_key,
+        base_url=settings.material_vlm_base_url,
+        model=settings.material_vlm_model,
+        timeout_sec=settings.material_vlm_timeout_sec,
+    )
 
 
 def build_plan_generator() -> PlanGenerator:

@@ -39,6 +39,12 @@ router = APIRouter()
 
 
 ALLOWED_SAMPLE_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm"}
+ALLOWED_MATERIAL_SUFFIXES = {
+    ".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv",
+    ".jpg", ".jpeg", ".png", ".webp", ".gif",
+    ".txt", ".md", ".csv",
+    ".mp3", ".wav", ".m4a", ".aac",
+}
 SUPPORTED_VARIANTS = {"balanced", "high_click", "high_conversion", "fast_pacing", "premium"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
@@ -115,6 +121,67 @@ def upload_sample_pipeline(
             use_mock=not material_uri_list,
         )
     )
+    try:
+        edit_plan = plan_generator.generate(
+            GeneratePlanRequest(
+                project_id=safe_project_id,
+                target_title=target.title,
+                variant=variant,
+                use_mock=False,
+            ),
+            structure_dna,
+            material_library,
+        )
+    except ValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    return PipelineResult(
+        structure_dna=structure_dna,
+        material_library=material_library,
+        edit_plan=edit_plan,
+        comparison_report=report_service.comparison_report(edit_plan),
+    )
+
+
+@router.post("/api/pipeline/upload-all", response_model=PipelineResult)
+def upload_all_pipeline(
+    sample: UploadFile = File(...),
+    materials: list[UploadFile] = File(default=[]),
+    project_id: str = Form("case_001"),
+    video_id: str = Form("sample_uploaded"),
+    target_title: str = Form("新品带货短视频"),
+    target_category: str = Form("product_talk"),
+    selling_points: str = Form(""),
+    variant: str = Form("balanced"),
+    analyzer: StructureAnalyzer = Depends(build_structure_analyzer),
+    material_analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
+    plan_generator: PlanGenerator = Depends(build_plan_generator),
+    report_service: ReportService = Depends(build_report_service),
+) -> PipelineResult:
+    """Full real pipeline: uploaded sample (A) + uploaded user materials (B) -> plan (C)."""
+    if variant not in SUPPORTED_VARIANTS:
+        raise HTTPException(status_code=400, detail=f"Unsupported variant: {variant}")
+
+    safe_project_id, safe_video_id, upload_path = _save_uploaded_sample(sample, project_id, video_id)
+    structure_dna = _analyze_saved_sample(safe_project_id, safe_video_id, upload_path, analyzer)
+    target = TargetBrief(
+        title=target_title,
+        category=target_category,
+        selling_points=_split_form_list(selling_points),
+    )
+
+    real_materials = [file for file in materials if file.filename]
+    if real_materials:
+        saved = [_save_uploaded_material(file, safe_project_id, index) for index, file in enumerate(real_materials, start=1)]
+        try:
+            material_library = material_analyzer.analyze_files(safe_project_id, target, saved)
+        except MediaProbeDependencyError as error:
+            raise HTTPException(status_code=500, detail=f"FFmpeg dependency unavailable: {error}") from error
+    else:
+        material_library = material_analyzer.analyze(
+            AnalyzeMaterialsRequest(project_id=safe_project_id, target=target, use_mock=True)
+        )
+
     try:
         edit_plan = plan_generator.generate(
             GeneratePlanRequest(
@@ -218,6 +285,62 @@ def analyze_materials(
     analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
 ) -> MaterialLibrary:
     return analyzer.analyze(request)
+
+
+@router.post("/api/materials/upload", response_model=MaterialLibrary)
+def upload_materials(
+    files: list[UploadFile] = File(...),
+    project_id: str = Form("case_001"),
+    target_title: str = Form("未命名短视频"),
+    target_category: str = Form("product_talk"),
+    selling_points: str = Form(""),
+    analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
+) -> MaterialLibrary:
+    if not files:
+        raise HTTPException(status_code=400, detail="No material files uploaded")
+
+    safe_project_id = _safe_path_part(project_id, "case_001")
+    saved_paths = [_save_uploaded_material(file, safe_project_id, index) for index, file in enumerate(files, start=1)]
+    target = TargetBrief(
+        title=target_title,
+        category=target_category,
+        selling_points=_split_form_list(selling_points),
+    )
+    try:
+        return analyzer.analyze_files(safe_project_id, target, saved_paths)
+    except MediaProbeDependencyError as error:
+        raise HTTPException(status_code=500, detail=f"FFmpeg dependency unavailable: {error}") from error
+
+
+def _save_uploaded_material(file: UploadFile, safe_project_id: str, index: int) -> Path:
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_MATERIAL_SUFFIXES:
+        raise HTTPException(status_code=400, detail=f"Unsupported material suffix: {suffix or 'unknown'}")
+
+    materials_dir = OUTPUTS_DIR / safe_project_id / "materials"
+    materials_dir.mkdir(parents=True, exist_ok=True)
+    stem = _safe_path_part(Path(file.filename or "").stem, f"material_{index:03d}")
+    upload_path = materials_dir / f"{index:03d}_{stem}{suffix}"
+
+    max_bytes = get_settings().max_sample_upload_bytes
+    bytes_written = 0
+    with upload_path.open("wb") as output:
+        while chunk := file.file.read(UPLOAD_CHUNK_SIZE):
+            bytes_written += len(chunk)
+            if bytes_written > max_bytes:
+                output.close()
+                upload_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Material is too large; limit is {max_bytes // (1024 * 1024)}MB",
+                )
+            output.write(chunk)
+
+    if bytes_written == 0:
+        upload_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=f"Uploaded material '{file.filename}' is empty")
+
+    return upload_path
 
 
 @router.post("/api/plans/generate", response_model=EditPlan)
