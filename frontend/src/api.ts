@@ -1,4 +1,8 @@
-import type {MaterialLibrary, PipelineResult, StructureDNA} from "./types";
+import type {EditPlan, MaterialLibrary, PipelineResult, StructureDNA} from "./types";
+
+export type VariantComparison = {
+  variants: Array<{variant: string; edit_plan: EditPlan}>;
+};
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -89,6 +93,19 @@ export async function runDemoPipeline(): Promise<PipelineResult> {
 
   if (!response.ok) {
     throw new Error(`Demo pipeline failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function compareVariants(): Promise<VariantComparison> {
+  const response = await fetch(`${API_BASE_URL}/api/pipeline/compare`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+  });
+
+  if (!response.ok) {
+    throw new Error(`Variant compare failed: ${response.status}`);
   }
 
   return response.json();

@@ -3,7 +3,8 @@ import type {ReactNode} from "react";
 import {Button, Card, Input, Progress, Radio, Slider, Tag, Textarea} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
-import {assetUrl, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
+import {assetUrl, compareVariants, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
+import type {VariantComparison} from "./api";
 import {demoSessions} from "./demoSessions";
 import type {DemoSession} from "./demoSessions";
 import {fallbackPipeline} from "./mockState";
@@ -16,7 +17,7 @@ import type {
   TimelineItem,
 } from "./types";
 
-type ViewKey = "overview" | "analysis" | "materials" | "plan" | "acceptance";
+type ViewKey = "overview" | "analysis" | "materials" | "plan" | "compare" | "acceptance";
 type VariantKey = "balanced" | "high_click" | "high_conversion";
 type SessionStatus = DemoSession["status"];
 type SessionStage = DemoSession["stage"];
@@ -118,6 +119,7 @@ const viewTabs: Array<{key: ViewKey; label: string}> = [
   {key: "analysis", label: "样例分析"},
   {key: "materials", label: "素材匹配"},
   {key: "plan", label: "方案输出"},
+  {key: "compare", label: "版本对比"},
   {key: "acceptance", label: "验收清单"},
 ];
 
@@ -514,6 +516,9 @@ export function App() {
             onDraftChange={(field, value) => setDraft((current) => ({...current, [field]: value}))}
             setActiveSegmentId={setActiveSegmentId}
           />
+        )}
+        {activeView === "compare" && (
+          <CompareView onState={setApiState} />
         )}
         {activeView === "acceptance" && (
           <AcceptanceView
@@ -1376,6 +1381,101 @@ function PlanRow({item, onSelect}: {item: TimelineItem; onSelect: (id: string) =
       <p>{item.script}</p>
       <small>{item.explanation}</small>
     </button>
+  );
+}
+
+function CompareView({onState}: {onState: (state: string) => void}) {
+  const [comparison, setComparison] = useState<VariantComparison | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    compareVariants()
+      .then((res) => {
+        if (active) {
+          setComparison(res);
+          onState("variants compared");
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof Error ? err.message : "compare failed");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [onState]);
+
+  if (loading) {
+    return <div className="compare-hint">正在生成三个版本的方案…</div>;
+  }
+  if (error || !comparison) {
+    return <div className="compare-hint">版本对比需要后端运行（{error || "无数据"}）。先点左上角“跑通 Demo 管线”。</div>;
+  }
+
+  return (
+    <div className="compare-grid">
+      {comparison.variants.map(({variant, edit_plan}) => {
+        const config = variantConfigs.find((item) => item.id === variant);
+        const counts = statusOrder.reduce<Record<SlotStatus, number>>(
+          (acc, status) => {
+            acc[status] = edit_plan.timeline.filter((item) => item.slot_status === status).length;
+            return acc;
+          },
+          {matched: 0, weak_match: 0, missing: 0, supplemented: 0},
+        );
+        const score = edit_plan.overall_score;
+        return (
+          <Card bordered className="panel compare-col" key={variant}>
+            <PanelTitle eyebrow={variant} title={config?.label ?? variant} />
+            <p className="compare-focus">{config?.focus}</p>
+            <div className="compare-bars">
+              <ScoreBar label="结构一致" value={score.structure_consistency} />
+              <ScoreBar label="素材匹配" value={score.material_fit} />
+              <ScoreBar label="节奏匹配" value={score.pacing_fit} />
+            </div>
+            <div className="compare-status">
+              {statusOrder.map((status) => (
+                <Tag key={status} shape="round" theme={statusThemes[status]} variant="light">
+                  {statusLabels[status]} {counts[status]}
+                </Tag>
+              ))}
+            </div>
+            <div className="compare-track">
+              {edit_plan.timeline.map((item) => (
+                <span key={item.target_segment_id} className={`compare-seg ${item.slot_status}`}>
+                  {functionLabels[item.function]}
+                </span>
+              ))}
+            </div>
+            <div className="compare-config">
+              <Info label="脚本基调" value={config?.scriptTone ?? "-"} />
+              <Info label="节奏" value={config?.pacing ?? "-"} />
+              <Info label="包装" value={config?.packaging ?? "-"} />
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScoreBar({label, value}: {label: string; value: number}) {
+  return (
+    <div className="score-bar">
+      <span>{label}</span>
+      <div className="score-bar-track">
+        <span style={{width: `${Math.round(value * 100)}%`}} />
+      </div>
+      <b>{Math.round(value * 100)}</b>
+    </div>
   );
 }
 

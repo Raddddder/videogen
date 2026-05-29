@@ -375,6 +375,30 @@ def run_demo_pipeline(
     return pipeline.run(sample_request, materials_request, plan_request)
 
 
+@router.post("/api/pipeline/compare")
+def compare_variants(
+    pipeline: DemoPipeline = Depends(build_demo_pipeline),
+) -> Dict[str, Any]:
+    """Generate the same structure under all three variants for side-by-side compare."""
+    target = demo_target()
+    sample_request = AnalyzeSampleRequest(project_id="case_001", video_id="sample_001", use_mock=True)
+    materials_request = AnalyzeMaterialsRequest(project_id="case_001", target=target, use_mock=True)
+    variants = []
+    for variant in ("balanced", "high_click", "high_conversion"):
+        result = pipeline.run(
+            sample_request,
+            materials_request,
+            GeneratePlanRequest(
+                project_id="case_001",
+                target_title=target.title,
+                variant=variant,
+                use_mock=True,
+            ),
+        )
+        variants.append({"variant": variant, "edit_plan": result.edit_plan.model_dump()})
+    return {"variants": variants}
+
+
 @router.post("/api/pipeline/material-demo", response_model=PipelineResult)
 def run_material_demo_pipeline(
     request: MaterialPipelineRequest,
