@@ -8,12 +8,13 @@ from app.api.dependencies import (
     build_demo_pipeline,
     build_repository,
     build_material_analyzer,
+    build_media_renderer,
     build_plan_generator,
     build_report_service,
     build_structure_analyzer,
 )
 from app.application.pipeline import DemoPipeline
-from app.core.paths import OUTPUTS_DIR
+from app.core.paths import OUTPUTS_DIR, PROJECT_ROOT
 from app.core.settings import get_settings
 from app.models.contracts import (
     AnalyzeMaterialsRequest,
@@ -30,6 +31,7 @@ from app.services.asr_service import AsrServiceError
 from app.services.json_repository import JsonRepository
 from app.services.material_analyzer import MaterialAnalyzer
 from app.services.media_probe import MediaProbeDependencyError, MediaProbeError
+from app.services.media_renderer import MediaRenderer, MediaRenderError
 from app.services.plan_generator import PlanGenerator
 from app.services.report_service import ReportService
 from app.services.structure_analyzer import StructureAnalyzer
@@ -397,6 +399,22 @@ def compare_variants(
         )
         variants.append({"variant": variant, "edit_plan": result.edit_plan.model_dump()})
     return {"variants": variants}
+
+
+@router.post("/api/render/preview")
+def render_preview(
+    payload: PipelineResult,
+    renderer: MediaRenderer = Depends(build_media_renderer),
+) -> Dict[str, Any]:
+    """Compose a real 9:16 preview.mp4 from the Edit Plan + materials."""
+    project_id = _safe_path_part(payload.edit_plan.project_id, "case_001")
+    output_path = OUTPUTS_DIR / project_id / "preview.mp4"
+    try:
+        renderer.render_preview(payload.edit_plan, payload.material_library, output_path)
+    except MediaRenderError as error:
+        raise HTTPException(status_code=500, detail=f"Preview render failed: {error}") from error
+    relative = output_path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    return {"preview_url": f"/{relative}", "preview_path": relative}
 
 
 @router.post("/api/pipeline/material-demo", response_model=PipelineResult)

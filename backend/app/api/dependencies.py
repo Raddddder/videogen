@@ -5,6 +5,7 @@ from app.services.asr_service import AsrService
 from app.services.material_analyzer import MaterialAnalyzer
 from app.services.material_vlm import MaterialVlmClient
 from app.services.media_probe import MediaProbe
+from app.services.media_renderer import MediaRenderer
 from app.services.plan_generator import PlanGenerator
 from app.services.report_service import ReportService
 from app.services.structure_analyzer import StructureAnalyzer
@@ -97,6 +98,11 @@ def build_structure_role_classifier() -> StructureRoleClassifier:
         model=settings.llm_model,
         timeout_sec=settings.llm_timeout_sec,
     )
+
+
+def build_media_renderer() -> MediaRenderer:
+    settings = get_settings()
+    return MediaRenderer(ffmpeg_bin=settings.ffmpeg_bin)
 
 
 def build_media_probe() -> MediaProbe:

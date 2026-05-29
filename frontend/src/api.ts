@@ -98,6 +98,22 @@ export async function runDemoPipeline(): Promise<PipelineResult> {
   return response.json();
 }
 
+export async function renderPreview(
+  data: PipelineResult,
+): Promise<{preview_url: string; preview_path: string}> {
+  const response = await fetch(`${API_BASE_URL}/api/render/preview`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Preview render failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function compareVariants(): Promise<VariantComparison> {
   const response = await fetch(`${API_BASE_URL}/api/pipeline/compare`, {
     method: "POST",

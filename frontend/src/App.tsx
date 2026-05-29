@@ -3,7 +3,7 @@ import type {ReactNode} from "react";
 import {Button, Card, Input, Progress, Radio, Slider, Tag, Textarea} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
-import {assetUrl, compareVariants, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
+import {assetUrl, compareVariants, renderPreview, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
 import type {VariantComparison} from "./api";
 import {demoSessions} from "./demoSessions";
 import type {DemoSession} from "./demoSessions";
@@ -1141,6 +1141,46 @@ function MaterialsView({
   );
 }
 
+function RenderExport({data}: {data: PipelineResult}) {
+  const [rendering, setRendering] = useState(false);
+  const [url, setUrl] = useState<string | undefined>();
+  const [error, setError] = useState("");
+
+  const onRender = async () => {
+    setRendering(true);
+    setError("");
+    setUrl(undefined);
+    try {
+      const res = await renderPreview(data);
+      setUrl(`${assetUrl(res.preview_url) ?? ""}?t=${Date.now()}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "render failed");
+    } finally {
+      setRendering(false);
+    }
+  };
+
+  return (
+    <div className="render-export">
+      <Button
+        icon={<RocketIcon />}
+        loading={rendering}
+        theme="primary"
+        variant="outline"
+        onClick={onRender}
+      >
+        {rendering ? "合成中..." : "导出 mp4"}
+      </Button>
+      {url && (
+        <a className="render-link" href={url} target="_blank" rel="noreferrer">
+          ✓ 查看成片
+        </a>
+      )}
+      {error && <span className="render-error">需后端运行</span>}
+    </div>
+  );
+}
+
 function TimelinePreview({data, totalDuration}: {data: PipelineResult; totalDuration: number}) {
   const [playing, setPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -1249,7 +1289,10 @@ function PlanView({
     <div className="plan-layout">
       <div className="plan-main">
         <Card bordered className="panel">
-          <PanelTitle eyebrow="Preview" title="结果预览" />
+          <div className="material-head-row">
+            <PanelTitle eyebrow="Preview" title="结果预览" />
+            <RenderExport data={data} />
+          </div>
           <TimelinePreview data={data} totalDuration={totalDuration} />
         </Card>
 
