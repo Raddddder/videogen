@@ -100,7 +100,7 @@ class Material(BaseModel):
     transcript: str = ""
     key_visuals: List[str] = Field(default_factory=list)
     preview_url: Optional[str] = None
-    analysis_source: Literal["mock", "rule", "vlm"] = "rule"
+    analysis_source: Literal["mock", "rule", "vlm", "aigc"] = "rule"
 
 
 class MaterialLibrary(BaseModel):
@@ -180,13 +180,29 @@ class AnalyzeMaterialsRequest(BaseModel):
     use_mock: bool = True
 
 
+class ManualEdits(BaseModel):
+    """人工微调参数：在结构迁移基础上覆盖局部文案/包装/节奏。"""
+    hook_rewrite: Optional[str] = None
+    cta_text: Optional[str] = None
+    packaging_style: Optional[str] = None
+    pacing_intensity: Optional[int] = None  # 30-100，越高节奏越快
+    selling_points: Optional[List[str]] = None  # 重排后的卖点顺序
+
+
 class GeneratePlanRequest(BaseModel):
     project_id: str = "case_001"
     target_title: str = "新品空气炸锅带货短视频"
     variant: Variant = "balanced"
     structure_dna: Optional[StructureDNA] = None
     material_library: Optional[MaterialLibrary] = None
+    manual_edits: Optional[ManualEdits] = None
+    instruction: Optional[str] = None  # 自然语言改片指令，由 LLM 解析成 manual_edits
     use_mock: bool = True
+
+
+class InterpretEditRequest(BaseModel):
+    instruction: str
+    context: str = ""
 
 
 class MaterialPipelineRequest(BaseModel):

@@ -1,14 +1,16 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
 from app.api.dependencies import (
+    build_aigc_image_client,
     build_demo_pipeline,
     build_repository,
     build_material_analyzer,
     build_media_renderer,
+    build_natural_edit_parser,
     build_plan_generator,
     build_report_service,
     build_structure_analyzer,
@@ -21,6 +23,9 @@ from app.models.contracts import (
     AnalyzeSampleRequest,
     EditPlan,
     GeneratePlanRequest,
+    InterpretEditRequest,
+    ManualEdits,
+    Material,
     MaterialLibrary,
     MaterialPipelineRequest,
     PipelineResult,
@@ -30,8 +35,10 @@ from app.models.contracts import (
 from app.services.asr_service import AsrServiceError
 from app.services.json_repository import JsonRepository
 from app.services.material_analyzer import MaterialAnalyzer
+from app.services.aigc_image import AigcImageClient
 from app.services.media_probe import MediaProbeDependencyError, MediaProbeError
 from app.services.media_renderer import MediaRenderer, MediaRenderError
+from app.services.natural_edit_parser import NaturalEditParser
 from app.services.plan_generator import PlanGenerator
 from app.services.report_service import ReportService
 from app.services.structure_analyzer import StructureAnalyzer
@@ -353,6 +360,63 @@ def generate_plan(
     return generator.generate(request)
 
 
+def _merge_edits(base: ManualEdits, override: Optional[ManualEdits]) -> ManualEdits:
+    """显式参数(override)覆盖自然语言解析(base)的非空字段。"""
+    if override is None:
+        return base
+    data = base.model_dump()
+    for key, value in override.model_dump().items():
+        if value is not None:
+            data[key] = value
+    return ManualEdits(**data)
+
+
+@router.post("/api/plans/regenerate", response_model=PipelineResult)
+def regenerate_plan(
+    request: GeneratePlanRequest,
+    generator: PlanGenerator = Depends(build_plan_generator),
+    report_service: ReportService = Depends(build_report_service),
+    edit_parser: NaturalEditParser = Depends(build_natural_edit_parser),
+) -> PipelineResult:
+    """人工微调回灌：structure_dna + material_library + manual_edits / 自然语言 instruction 重生成方案。"""
+    if request.structure_dna is None or request.material_library is None:
+        raise HTTPException(
+            status_code=400,
+            detail="regenerate requires structure_dna and material_library in the request body",
+        )
+    if request.instruction:
+        context = request.target_title or (
+            request.material_library.target.title if request.material_library.target else ""
+        )
+        parsed = edit_parser.parse(request.instruction, context)
+        if parsed is not None:
+            request.manual_edits = _merge_edits(parsed, request.manual_edits)
+    try:
+        edit_plan = generator.generate(request)
+    except ValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return PipelineResult(
+        structure_dna=request.structure_dna,
+        material_library=request.material_library,
+        edit_plan=edit_plan,
+        comparison_report=report_service.comparison_report(edit_plan),
+    )
+
+
+@router.post("/api/edits/interpret", response_model=ManualEdits)
+def interpret_edit(
+    request: InterpretEditRequest,
+    edit_parser: NaturalEditParser = Depends(build_natural_edit_parser),
+) -> ManualEdits:
+    """把一句话改片指令解析成结构化 ManualEdits(供前端填充微调表单)。"""
+    if not edit_parser.enabled:
+        raise HTTPException(status_code=503, detail="natural language editing is not configured")
+    edits = edit_parser.parse(request.instruction, request.context)
+    if edits is None:
+        raise HTTPException(status_code=502, detail="could not interpret the instruction")
+    return edits
+
+
 @router.post("/api/reports/comparison")
 def comparison_report(
     edit_plan: EditPlan,
@@ -379,25 +443,23 @@ def run_demo_pipeline(
 
 @router.post("/api/pipeline/compare")
 def compare_variants(
-    pipeline: DemoPipeline = Depends(build_demo_pipeline),
+    payload: PipelineResult,
+    generator: PlanGenerator = Depends(build_plan_generator),
 ) -> Dict[str, Any]:
-    """Generate the same structure under all three variants for side-by-side compare."""
-    target = demo_target()
-    sample_request = AnalyzeSampleRequest(project_id="case_001", video_id="sample_001", use_mock=True)
-    materials_request = AnalyzeMaterialsRequest(project_id="case_001", target=target, use_mock=True)
+    """用当前方案的 structure_dna + material_library 生成三个 variant 做并排对比。"""
     variants = []
     for variant in ("balanced", "high_click", "high_conversion"):
-        result = pipeline.run(
-            sample_request,
-            materials_request,
+        plan = generator.generate(
             GeneratePlanRequest(
-                project_id="case_001",
-                target_title=target.title,
+                project_id=payload.edit_plan.project_id,
+                target_title=payload.edit_plan.target_title,
                 variant=variant,
-                use_mock=True,
-            ),
+                structure_dna=payload.structure_dna,
+                material_library=payload.material_library,
+                use_mock=False,
+            )
         )
-        variants.append({"variant": variant, "edit_plan": result.edit_plan.model_dump()})
+        variants.append({"variant": variant, "edit_plan": plan.model_dump()})
     return {"variants": variants}
 
 
@@ -415,6 +477,66 @@ def render_preview(
         raise HTTPException(status_code=500, detail=f"Preview render failed: {error}") from error
     relative = output_path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
     return {"preview_url": f"/{relative}", "preview_path": relative}
+
+
+_AIGC_SCENE_LABELS = {
+    "hook": "吸引眼球的开场画面",
+    "pain_point": "痛点困扰场景",
+    "setup": "背景铺垫场景",
+    "solution": "产品解决方案展示",
+    "proof": "效果对比与证明画面",
+    "transition": "转场过渡画面",
+    "cta": "购买引导画面",
+}
+
+
+@router.post("/api/aigc/fill-gaps", response_model=PipelineResult)
+def aigc_fill_gaps(
+    payload: PipelineResult,
+    aigc: AigcImageClient = Depends(build_aigc_image_client),
+) -> PipelineResult:
+    """对缺口段(无匹配素材)用文生图生成补全画面，挂为新素材并标 supplemented。"""
+    if not aigc.enabled:
+        raise HTTPException(status_code=503, detail="AIGC image generation not configured")
+
+    project_id = _safe_path_part(payload.edit_plan.project_id, "case_001")
+    aigc_dir = OUTPUTS_DIR / project_id / "aigc"
+    materials = list(payload.material_library.materials)
+    filled = 0
+    for item in payload.edit_plan.timeline:
+        if item.selected_material_id:
+            continue
+        scene = f"{_AIGC_SCENE_LABELS.get(item.function, '')}，{item.script}".strip("，")
+        saved = aigc.generate(scene, aigc_dir / f"{item.target_segment_id}.png")
+        if saved is None:
+            continue
+        rel = saved.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+        materials.append(
+            Material(
+                material_id=f"aigc_{item.target_segment_id}",
+                type="image",
+                file_name=saved.name,
+                duration_sec=0.0,
+                aspect_ratio="9:16",
+                usable_ranges=[],
+                shot_type="aigc_generated",
+                semantic_role=item.function,
+                tags=["AIGC", _AIGC_SCENE_LABELS.get(item.function, item.function)],
+                emotion_score=5.0,
+                quality_score=0.8,
+                crop_risk="low",
+                transcript=item.script,
+                preview_url=f"/{rel}",
+                analysis_source="aigc",
+            )
+        )
+        item.selected_material_id = f"aigc_{item.target_segment_id}"
+        item.slot_status = "supplemented"
+        item.completion_strategy = "aigc"
+        filled += 1
+
+    payload.material_library.materials = materials
+    return payload
 
 
 @router.post("/api/pipeline/material-demo", response_model=PipelineResult)

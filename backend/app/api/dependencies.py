@@ -3,8 +3,10 @@ from app.core.settings import get_settings
 from app.services.json_repository import JsonRepository
 from app.services.asr_service import AsrService
 from app.services.material_analyzer import MaterialAnalyzer
+from app.services.aigc_image import AigcImageClient
 from app.services.material_vlm import MaterialVlmClient
 from app.services.media_probe import MediaProbe
+from app.services.natural_edit_parser import NaturalEditParser
 from app.services.media_renderer import MediaRenderer
 from app.services.plan_generator import PlanGenerator
 from app.services.report_service import ReportService
@@ -100,9 +102,31 @@ def build_structure_role_classifier() -> StructureRoleClassifier:
     )
 
 
+def build_natural_edit_parser() -> NaturalEditParser:
+    settings = get_settings()
+    return NaturalEditParser(
+        provider=settings.llm_provider,
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+        timeout_sec=settings.llm_timeout_sec,
+    )
+
+
 def build_media_renderer() -> MediaRenderer:
     settings = get_settings()
     return MediaRenderer(ffmpeg_bin=settings.ffmpeg_bin)
+
+
+def build_aigc_image_client() -> AigcImageClient:
+    settings = get_settings()
+    return AigcImageClient(
+        enabled=settings.aigc_image_enabled,
+        api_key=settings.aigc_image_api_key,
+        base_url=settings.aigc_image_base_url,
+        model=settings.aigc_image_model,
+        timeout_sec=settings.aigc_image_timeout_sec,
+    )
 
 
 def build_media_probe() -> MediaProbe:

@@ -114,10 +114,72 @@ export async function renderPreview(
   return response.json();
 }
 
-export async function compareVariants(): Promise<VariantComparison> {
+/** AIGC 补全：对缺口段生成真实补全图，回填为素材。 */
+export async function fillGaps(data: PipelineResult): Promise<PipelineResult> {
+  const response = await fetch(`${API_BASE_URL}/api/aigc/fill-gaps`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    throw new Error(`AIGC fill-gaps failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export type ManualEditsPayload = {
+  hook_rewrite?: string;
+  cta_text?: string;
+  packaging_style?: string;
+  pacing_intensity?: number;
+  selling_points?: string[];
+};
+
+/** 人工微调回灌：回传 dna+materials+人工参数，后端重生成完整方案。 */
+export async function regeneratePlan(
+  data: PipelineResult,
+  edits: ManualEditsPayload,
+  variant: string,
+  instruction?: string,
+): Promise<PipelineResult> {
+  const response = await fetch(`${API_BASE_URL}/api/plans/regenerate`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      project_id: data.edit_plan.project_id,
+      target_title: data.edit_plan.target_title,
+      variant,
+      structure_dna: data.structure_dna,
+      material_library: data.material_library,
+      manual_edits: edits,
+      instruction: instruction || null,
+      use_mock: false,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Regenerate failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+/** 自然语言改片：把一句话指令解析成结构化 ManualEdits，供前端填充表单。 */
+export async function interpretEdits(instruction: string, context: string): Promise<ManualEditsPayload> {
+  const response = await fetch(`${API_BASE_URL}/api/edits/interpret`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({instruction, context}),
+  });
+  if (!response.ok) {
+    throw new Error(`Interpret failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function compareVariants(data: PipelineResult): Promise<VariantComparison> {
   const response = await fetch(`${API_BASE_URL}/api/pipeline/compare`, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data),
   });
 
   if (!response.ok) {
