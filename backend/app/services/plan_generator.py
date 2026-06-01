@@ -7,6 +7,7 @@ from app.models.contracts import (
     EditPlan,
     ExportPaths,
     GeneratePlanRequest,
+    ManualEdits,
     Material,
     MaterialLibrary,
     MissingSlot,
@@ -87,7 +88,11 @@ class PlanGenerator:
         match_scores: Dict[str, MatchCandidate] = {}
         used_counts: Dict[str, int] = {}
         cursor = 0.0
+        edits = request.manual_edits
         duration_factor = self.plan_config.get("variant_duration_factor", {}).get(request.variant, 1.0)
+        if edits and edits.pacing_intensity:
+            # 72 为基准节奏；强度越高，段落越短(节奏越快)。
+            duration_factor *= max(0.6, min(1.4, (130 - edits.pacing_intensity) / 58))
 
         for index, segment in enumerate(structure.segments, start=1):
             duration = round(max(segment.duration_sec * duration_factor, 1.0), 1)
@@ -116,8 +121,8 @@ class PlanGenerator:
                     gap_reason=gap_reason,
                     completion_strategy=strategy,
                     supplement_instruction=supplement_instruction,
-                    script=self._script(segment, selected_material, materials),
-                    packaging=self._packaging(segment, status),
+                    script=self._script(segment, selected_material, materials, edits),
+                    packaging=self._packaging(segment, status, edits),
                     explanation=self._explanation(segment, candidate, status, strategy),
                 )
             )
@@ -260,11 +265,23 @@ class PlanGenerator:
         segment: StructureSegment,
         material: Optional[Material],
         library: MaterialLibrary,
+        edits: Optional[ManualEdits] = None,
     ) -> str:
+        # 人工改写优先级最高，覆盖匹配素材文案与自动生成文案。
+        if edits:
+            if segment.function == "hook" and edits.hook_rewrite and edits.hook_rewrite.strip():
+                return edits.hook_rewrite.strip()[:120]
+            if segment.function == "cta" and edits.cta_text and edits.cta_text.strip():
+                return edits.cta_text.strip()[:120]
+
         if material and material.transcript.strip():
             return material.transcript.strip()[:120]
 
-        selling_points = library.target.selling_points if library.target else []
+        selling_points = (
+            edits.selling_points
+            if edits and edits.selling_points
+            else (library.target.selling_points if library.target else [])
+        )
         points = "、".join(selling_points[:2])
         if segment.function == "hook" and library.target:
             return f"很多人做{library.target.title}，第一步就容易错"
@@ -274,13 +291,21 @@ class PlanGenerator:
             return "想少踩坑，先收藏这条，链接我放下面了"
         return segment.transcript
 
-    def _packaging(self, segment: StructureSegment, status: str) -> TimelinePackaging:
+    def _packaging(
+        self,
+        segment: StructureSegment,
+        status: str,
+        edits: Optional[ManualEdits] = None,
+    ) -> TimelinePackaging:
         effect = segment.packaging.emphasis_elements[0] if segment.packaging.emphasis_elements else segment.visual_cue
         title_bar_text = segment.packaging.title_bar
         if status in {"weak_match", "missing", "supplemented"} and title_bar_text == "none":
             title_bar_text = f"补强 {segment.function}"
+        subtitle = segment.packaging.subtitle_style
+        if edits and edits.packaging_style and edits.packaging_style.strip():
+            subtitle = edits.packaging_style.strip()
         return TimelinePackaging(
-            subtitle=segment.packaging.subtitle_style,
+            subtitle=subtitle,
             title_bar_text=title_bar_text,
             transition=segment.packaging.transition,
             effect=effect,

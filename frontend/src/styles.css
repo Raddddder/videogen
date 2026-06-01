@@ -2331,3 +2331,5 @@ button {
 .render-link { color: var(--accent); font-size: 13px; font-weight: 500; text-decoration: none; }
 .render-link:hover { text-decoration: underline; }
 .render-error { color: var(--ink-3); font-size: 12px; }
+
+.material-head-actions { display: flex; gap: 10px; flex-wrap: wrap; }

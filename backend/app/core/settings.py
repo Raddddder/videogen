@@ -154,6 +154,14 @@ class Settings:
         _vlm_default = "true" if self.material_vlm_api_key and self.material_vlm_base_url else "false"
         self.material_vlm_enabled = self._parse_bool(os.getenv("MATERIAL_VLM_ENABLED", _vlm_default))
 
+        # AIGC 文生图(缺口补全)。默认复用 VLM 的 key/base(同为 SiliconFlow)。
+        self.aigc_image_model = os.getenv("AIGC_IMAGE_MODEL", "Kwai-Kolors/Kolors")
+        self.aigc_image_api_key = os.getenv("AIGC_IMAGE_API_KEY", self.material_vlm_api_key)
+        self.aigc_image_base_url = os.getenv("AIGC_IMAGE_BASE_URL", self.material_vlm_base_url)
+        self.aigc_image_timeout_sec = int(os.getenv("AIGC_IMAGE_TIMEOUT_SEC", "90"))
+        _aigc_default = "true" if self.aigc_image_api_key and self.aigc_image_base_url else "false"
+        self.aigc_image_enabled = self._parse_bool(os.getenv("AIGC_IMAGE_ENABLED", _aigc_default))
+
     @staticmethod
     def _load_json(path: Path) -> Dict[str, Any]:
         with path.open("r", encoding="utf-8") as file:

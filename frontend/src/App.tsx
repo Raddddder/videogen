@@ -3,7 +3,7 @@ import type {ReactNode} from "react";
 import {Button, Card, Input, Progress, Radio, Slider, Tag, Textarea} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
-import {assetUrl, compareVariants, renderPreview, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
+import {assetUrl, compareVariants, fillGaps, regeneratePlan, renderPreview, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
 import type {VariantComparison} from "./api";
 import {demoSessions} from "./demoSessions";
 import type {DemoSession} from "./demoSessions";
@@ -224,6 +224,8 @@ export function App() {
   const [activeVariant, setActiveVariant] = useState<VariantKey>(demoSessions[0].variant);
   const [draft, setDraft] = useState<WorkbenchDraft>(defaultDraft);
   const [materialUploading, setMaterialUploading] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [filling, setFilling] = useState(false);
   const sampleInputRef = useRef<HTMLInputElement>(null);
   const materialInputRef = useRef<HTMLInputElement>(null);
 
@@ -348,6 +350,45 @@ export function App() {
       setApiState(error instanceof Error ? error.message : "material upload failed");
     } finally {
       setMaterialUploading(false);
+    }
+  };
+
+  const handleRegenerate = async () => {
+    setRegenerating(true);
+    setApiState("regenerating plan");
+    try {
+      const result = await regeneratePlan(
+        data,
+        {
+          hook_rewrite: draft.hookRewrite,
+          cta_text: draft.ctaText,
+          packaging_style: draft.packagingStyle,
+          pacing_intensity: draft.pacingIntensity,
+          selling_points: draft.sellingPoints.split(/[、，,]/).map((s) => s.trim()).filter(Boolean),
+        },
+        activeVariant,
+      );
+      setData(result);
+      setActiveSegmentId(result.edit_plan.timeline[0]?.target_segment_id ?? "");
+      setApiState("plan regenerated");
+    } catch (error) {
+      setApiState(error instanceof Error ? error.message : "regenerate failed");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const handleFillGaps = async () => {
+    setFilling(true);
+    setApiState("AIGC 补全缺口中");
+    try {
+      const result = await fillGaps(data);
+      setData(result);
+      setApiState("缺口已由 AIGC 补全");
+    } catch (error) {
+      setApiState(error instanceof Error ? error.message : "AIGC fill failed");
+    } finally {
+      setFilling(false);
     }
   };
 
@@ -499,6 +540,8 @@ export function App() {
             setActiveSegmentId={setActiveSegmentId}
             materialUploading={materialUploading}
             onUploadMaterials={() => materialInputRef.current?.click()}
+            onFillGaps={handleFillGaps}
+            filling={filling}
           />
         )}
         {activeView === "plan" && (
@@ -515,6 +558,8 @@ export function App() {
             onVariantChange={setActiveVariant}
             onDraftChange={(field, value) => setDraft((current) => ({...current, [field]: value}))}
             setActiveSegmentId={setActiveSegmentId}
+            onRegenerate={handleRegenerate}
+            regenerating={regenerating}
           />
         )}
         {activeView === "compare" && (
@@ -1043,27 +1088,41 @@ function MaterialsView({
   setActiveSegmentId,
   materialUploading,
   onUploadMaterials,
+  onFillGaps,
+  filling,
 }: {
   data: PipelineResult;
   activeSegmentId: string;
   setActiveSegmentId: (id: string) => void;
   materialUploading: boolean;
   onUploadMaterials: () => void;
+  onFillGaps: () => void;
+  filling: boolean;
 }) {
   return (
     <div className="panel-grid">
       <Card bordered className="panel wide">
         <div className="material-head-row">
           <PanelTitle eyebrow="Module B" title="素材标签库" />
-          <Button
-            icon={<CloudUploadIcon />}
-            loading={materialUploading}
-            theme="primary"
-            variant="outline"
-            onClick={onUploadMaterials}
-          >
-            {materialUploading ? "AI 解析中..." : "上传我的素材"}
-          </Button>
+          <div className="material-head-actions">
+            <Button
+              icon={<RocketIcon />}
+              loading={filling}
+              variant="outline"
+              onClick={onFillGaps}
+            >
+              {filling ? "AIGC 生成中..." : "AIGC 补全缺口"}
+            </Button>
+            <Button
+              icon={<CloudUploadIcon />}
+              loading={materialUploading}
+              theme="primary"
+              variant="outline"
+              onClick={onUploadMaterials}
+            >
+              {materialUploading ? "AI 解析中..." : "上传我的素材"}
+            </Button>
+          </div>
         </div>
         <div className="material-grid">
           {data.material_library.materials.map((material) => {
@@ -1271,6 +1330,8 @@ function PlanView({
   onVariantChange,
   onDraftChange,
   setActiveSegmentId,
+  onRegenerate,
+  regenerating,
 }: {
   data: PipelineResult;
   totalDuration: number;
@@ -1284,6 +1345,8 @@ function PlanView({
   onVariantChange: (variant: VariantKey) => void;
   onDraftChange: (field: keyof WorkbenchDraft, value: string | number) => void;
   setActiveSegmentId: (id: string) => void;
+  onRegenerate: () => void;
+  regenerating: boolean;
 }) {
   return (
     <div className="plan-layout">
@@ -1377,6 +1440,15 @@ function PlanView({
                 onChange={(value) => onDraftChange("pacingIntensity", Array.isArray(value) ? value[0] : value)}
               />
             </label>
+            <Button
+              block
+              icon={<RocketIcon />}
+              loading={regenerating}
+              theme="primary"
+              onClick={onRegenerate}
+            >
+              {regenerating ? "重新生成中..." : "应用并重新生成方案"}
+            </Button>
           </div>
         </Card>
 

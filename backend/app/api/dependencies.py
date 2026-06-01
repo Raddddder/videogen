@@ -3,6 +3,7 @@ from app.core.settings import get_settings
 from app.services.json_repository import JsonRepository
 from app.services.asr_service import AsrService
 from app.services.material_analyzer import MaterialAnalyzer
+from app.services.aigc_image import AigcImageClient
 from app.services.material_vlm import MaterialVlmClient
 from app.services.media_probe import MediaProbe
 from app.services.media_renderer import MediaRenderer
@@ -103,6 +104,17 @@ def build_structure_role_classifier() -> StructureRoleClassifier:
 def build_media_renderer() -> MediaRenderer:
     settings = get_settings()
     return MediaRenderer(ffmpeg_bin=settings.ffmpeg_bin)
+
+
+def build_aigc_image_client() -> AigcImageClient:
+    settings = get_settings()
+    return AigcImageClient(
+        enabled=settings.aigc_image_enabled,
+        api_key=settings.aigc_image_api_key,
+        base_url=settings.aigc_image_base_url,
+        model=settings.aigc_image_model,
+        timeout_sec=settings.aigc_image_timeout_sec,
+    )
 
 
 def build_media_probe() -> MediaProbe:

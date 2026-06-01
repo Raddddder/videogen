@@ -6,6 +6,30 @@ from typing import Optional
 from app.core.paths import PROJECT_ROOT
 from app.models.contracts import EditPlan, Material, MaterialLibrary, TimelineItem
 
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    _PIL_OK = True
+except ImportError:  # pragma: no cover
+    _PIL_OK = False
+
+
+_FONT_CANDIDATES = [
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
+    "/System/Library/Fonts/PingFang.ttc",
+]
+
+_FUNCTION_LABELS = {
+    "hook": "开头钩子",
+    "pain_point": "痛点",
+    "setup": "铺垫",
+    "solution": "解决方案",
+    "proof": "效果证明",
+    "transition": "转场",
+    "cta": "转化 CTA",
+}
+
 
 class MediaRenderError(RuntimeError):
     """Raised when ffmpeg cannot compose the preview video."""
@@ -15,7 +39,9 @@ class MediaRenderer:
     """Compose an Edit Plan timeline into a real 9:16 preview.mp4 with ffmpeg.
 
     Each timeline segment becomes a normalized clip (matched video trimmed,
-    image held, or a placeholder card for gaps), then all are concatenated.
+    image held, or a placeholder card for gaps); Chinese subtitles are rendered
+    with Pillow into a transparent PNG and overlaid (this ffmpeg build has no
+    drawtext), then all segments are concatenated.
     """
 
     BG = "0x0b1020"
@@ -27,12 +53,15 @@ class MediaRenderer:
         height: int = 1920,
         fps: int = 30,
         timeout_sec: int = 300,
+        burn_subtitles: bool = True,
     ) -> None:
         self.ffmpeg_bin = ffmpeg_bin
         self.width = width
         self.height = height
         self.fps = fps
         self.timeout_sec = timeout_sec
+        self.font_path = next((f for f in _FONT_CANDIDATES if Path(f).exists()), None)
+        self.burn_subtitles = burn_subtitles and _PIL_OK and self.font_path is not None
 
     def render_preview(
         self,
@@ -52,8 +81,7 @@ class MediaRenderer:
             for index, item in enumerate(edit_plan.timeline):
                 duration = max(round(item.target_time_range[1] - item.target_time_range[0], 2), 0.8)
                 material = materials.get(item.selected_material_id) if item.selected_material_id else None
-                clip = self._render_segment(index, item, material, duration, tmp_dir)
-                clips.append(clip)
+                clips.append(self._render_segment(index, item, material, duration, tmp_dir))
 
             list_file = tmp_dir / "concat.txt"
             list_file.write_text("".join(f"file '{clip.as_posix()}'\n" for clip in clips), encoding="utf-8")
@@ -75,43 +103,88 @@ class MediaRenderer:
         out = tmp_dir / f"seg_{index:03d}.mp4"
         source_file = self._resolve_file(material)
         silent_audio = ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
-        common_out = [
-            "-map", "0:v:0", "-map", "1:a:0",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-            "-pix_fmt", "yuv420p", "-r", str(self.fps),
-            "-c:a", "aac", "-ar", "44100", "-ac", "2",
-            "-t", f"{duration:.2f}", str(out),
-        ]
 
         if material and material.type == "video_clip" and source_file:
             start = item.source_range[0] if item.source_range else 0.0
-            self._run([
-                self.ffmpeg_bin, "-nostdin", "-y",
-                "-ss", f"{start:.2f}", "-i", str(source_file),
-                *silent_audio,
-                "-vf", self._scale_pad(), *common_out,
-            ])
+            src_input = ["-ss", f"{start:.2f}", "-i", str(source_file)]
         elif material and material.type == "image" and source_file:
-            self._run([
-                self.ffmpeg_bin, "-nostdin", "-y",
-                "-loop", "1", "-i", str(source_file),
-                *silent_audio,
-                "-vf", self._scale_pad(), *common_out,
-            ])
+            src_input = ["-loop", "1", "-i", str(source_file)]
         else:
-            self._run([
-                self.ffmpeg_bin, "-nostdin", "-y",
-                "-f", "lavfi", "-i", f"color=c={self.BG}:s={self.width}x{self.height}:r={self.fps}",
-                *silent_audio,
-                "-vf", "format=yuv420p", *common_out,
-            ])
+            src_input = ["-f", "lavfi", "-i", f"color=c={self.BG}:s={self.width}x{self.height}:r={self.fps}"]
+
+        sub_png: Optional[Path] = None
+        if self.burn_subtitles:
+            sub_text = (item.script or "").strip() or _FUNCTION_LABELS.get(item.function, item.function)
+            title = item.packaging.title_bar_text if item.packaging else None
+            sub_png = tmp_dir / f"sub_{index:03d}.png"
+            self._subtitle_png(sub_text, title, sub_png)
+
+        if sub_png is not None:
+            filter_complex = f"[0:v]{self._scale_pad()}[bg];[bg][2:v]overlay=0:0,format=yuv420p[v]"
+            inputs = [*src_input, *silent_audio, "-i", str(sub_png)]
+        else:
+            filter_complex = f"[0:v]{self._scale_pad()},format=yuv420p[v]"
+            inputs = [*src_input, *silent_audio]
+
+        self._run([
+            self.ffmpeg_bin, "-nostdin", "-y", *inputs,
+            "-filter_complex", filter_complex,
+            "-map", "[v]", "-map", "1:a",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", str(self.fps),
+            "-c:a", "aac", "-ar", "44100", "-ac", "2",
+            "-t", f"{duration:.2f}", str(out),
+        ])
         return out
+
+    def _subtitle_png(self, text: str, title: Optional[str], out_path: Path) -> None:
+        width, height = self.width, self.height
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.truetype(self.font_path, 54)
+        lines = self._wrap_text(draw, text, font, width - 180)
+        ascent, descent = font.getmetrics()
+        line_h = ascent + descent + 18
+        block_h = line_h * len(lines)
+        y0 = height - block_h - 180
+        draw.rectangle([50, y0 - 28, width - 50, y0 + block_h + 18], fill=(0, 0, 0, 140))
+        for i, line in enumerate(lines):
+            w = draw.textlength(line, font=font)
+            draw.text(((width - w) / 2, y0 + i * line_h), line, font=font, fill=(255, 255, 255, 255))
+
+        if title and title not in {"none", ""}:
+            title_font = ImageFont.truetype(self.font_path, 40)
+            tw = draw.textlength(title, font=title_font)
+            draw.rounded_rectangle(
+                [(width - tw) / 2 - 26, 120, (width + tw) / 2 + 26, 188],
+                radius=34, fill=(15, 118, 110, 220),
+            )
+            draw.text(((width - tw) / 2, 132), title, font=title_font, fill=(255, 255, 255, 255))
+
+        img.save(out_path)
+
+    @staticmethod
+    def _wrap_text(draw, text: str, font, max_w: float, max_lines: int = 3) -> list[str]:
+        lines: list[str] = []
+        cur = ""
+        for ch in text:
+            if ch == "\n":
+                lines.append(cur)
+                cur = ""
+            elif draw.textlength(cur + ch, font=font) <= max_w:
+                cur += ch
+            else:
+                lines.append(cur)
+                cur = ch
+            if len(lines) >= max_lines:
+                break
+        if cur and len(lines) < max_lines:
+            lines.append(cur)
+        return lines[:max_lines] or [text[:12]]
 
     def _scale_pad(self) -> str:
         return (
             f"scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,"
-            f"pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2:color={self.BG},"
-            "setsar=1,format=yuv420p"
+            f"pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2:color={self.BG},setsar=1"
         )
 
     @staticmethod

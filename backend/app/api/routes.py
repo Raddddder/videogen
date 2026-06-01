@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
 from app.api.dependencies import (
+    build_aigc_image_client,
     build_demo_pipeline,
     build_repository,
     build_material_analyzer,
@@ -21,6 +22,7 @@ from app.models.contracts import (
     AnalyzeSampleRequest,
     EditPlan,
     GeneratePlanRequest,
+    Material,
     MaterialLibrary,
     MaterialPipelineRequest,
     PipelineResult,
@@ -30,6 +32,7 @@ from app.models.contracts import (
 from app.services.asr_service import AsrServiceError
 from app.services.json_repository import JsonRepository
 from app.services.material_analyzer import MaterialAnalyzer
+from app.services.aigc_image import AigcImageClient
 from app.services.media_probe import MediaProbeDependencyError, MediaProbeError
 from app.services.media_renderer import MediaRenderer, MediaRenderError
 from app.services.plan_generator import PlanGenerator
@@ -353,6 +356,30 @@ def generate_plan(
     return generator.generate(request)
 
 
+@router.post("/api/plans/regenerate", response_model=PipelineResult)
+def regenerate_plan(
+    request: GeneratePlanRequest,
+    generator: PlanGenerator = Depends(build_plan_generator),
+    report_service: ReportService = Depends(build_report_service),
+) -> PipelineResult:
+    """人工微调回灌：用前端回传的 structure_dna + material_library + manual_edits 重生成方案。"""
+    if request.structure_dna is None or request.material_library is None:
+        raise HTTPException(
+            status_code=400,
+            detail="regenerate requires structure_dna and material_library in the request body",
+        )
+    try:
+        edit_plan = generator.generate(request)
+    except ValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return PipelineResult(
+        structure_dna=request.structure_dna,
+        material_library=request.material_library,
+        edit_plan=edit_plan,
+        comparison_report=report_service.comparison_report(edit_plan),
+    )
+
+
 @router.post("/api/reports/comparison")
 def comparison_report(
     edit_plan: EditPlan,
@@ -415,6 +442,66 @@ def render_preview(
         raise HTTPException(status_code=500, detail=f"Preview render failed: {error}") from error
     relative = output_path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
     return {"preview_url": f"/{relative}", "preview_path": relative}
+
+
+_AIGC_SCENE_LABELS = {
+    "hook": "吸引眼球的开场画面",
+    "pain_point": "痛点困扰场景",
+    "setup": "背景铺垫场景",
+    "solution": "产品解决方案展示",
+    "proof": "效果对比与证明画面",
+    "transition": "转场过渡画面",
+    "cta": "购买引导画面",
+}
+
+
+@router.post("/api/aigc/fill-gaps", response_model=PipelineResult)
+def aigc_fill_gaps(
+    payload: PipelineResult,
+    aigc: AigcImageClient = Depends(build_aigc_image_client),
+) -> PipelineResult:
+    """对缺口段(无匹配素材)用文生图生成补全画面，挂为新素材并标 supplemented。"""
+    if not aigc.enabled:
+        raise HTTPException(status_code=503, detail="AIGC image generation not configured")
+
+    project_id = _safe_path_part(payload.edit_plan.project_id, "case_001")
+    aigc_dir = OUTPUTS_DIR / project_id / "aigc"
+    materials = list(payload.material_library.materials)
+    filled = 0
+    for item in payload.edit_plan.timeline:
+        if item.selected_material_id:
+            continue
+        scene = f"{_AIGC_SCENE_LABELS.get(item.function, '')}，{item.script}".strip("，")
+        saved = aigc.generate(scene, aigc_dir / f"{item.target_segment_id}.png")
+        if saved is None:
+            continue
+        rel = saved.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+        materials.append(
+            Material(
+                material_id=f"aigc_{item.target_segment_id}",
+                type="image",
+                file_name=saved.name,
+                duration_sec=0.0,
+                aspect_ratio="9:16",
+                usable_ranges=[],
+                shot_type="aigc_generated",
+                semantic_role=item.function,
+                tags=["AIGC", _AIGC_SCENE_LABELS.get(item.function, item.function)],
+                emotion_score=5.0,
+                quality_score=0.8,
+                crop_risk="low",
+                transcript=item.script,
+                preview_url=f"/{rel}",
+                analysis_source="aigc",
+            )
+        )
+        item.selected_material_id = f"aigc_{item.target_segment_id}"
+        item.slot_status = "supplemented"
+        item.completion_strategy = "aigc"
+        filled += 1
+
+    payload.material_library.materials = materials
+    return payload
 
 
 @router.post("/api/pipeline/material-demo", response_model=PipelineResult)
