@@ -196,7 +196,13 @@ class GeneratePlanRequest(BaseModel):
     structure_dna: Optional[StructureDNA] = None
     material_library: Optional[MaterialLibrary] = None
     manual_edits: Optional[ManualEdits] = None
+    instruction: Optional[str] = None  # 自然语言改片指令，由 LLM 解析成 manual_edits
     use_mock: bool = True
+
+
+class InterpretEditRequest(BaseModel):
+    instruction: str
+    context: str = ""
 
 
 class MaterialPipelineRequest(BaseModel):

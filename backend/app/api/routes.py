@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
@@ -10,6 +10,7 @@ from app.api.dependencies import (
     build_repository,
     build_material_analyzer,
     build_media_renderer,
+    build_natural_edit_parser,
     build_plan_generator,
     build_report_service,
     build_structure_analyzer,
@@ -22,6 +23,8 @@ from app.models.contracts import (
     AnalyzeSampleRequest,
     EditPlan,
     GeneratePlanRequest,
+    InterpretEditRequest,
+    ManualEdits,
     Material,
     MaterialLibrary,
     MaterialPipelineRequest,
@@ -35,6 +38,7 @@ from app.services.material_analyzer import MaterialAnalyzer
 from app.services.aigc_image import AigcImageClient
 from app.services.media_probe import MediaProbeDependencyError, MediaProbeError
 from app.services.media_renderer import MediaRenderer, MediaRenderError
+from app.services.natural_edit_parser import NaturalEditParser
 from app.services.plan_generator import PlanGenerator
 from app.services.report_service import ReportService
 from app.services.structure_analyzer import StructureAnalyzer
@@ -356,18 +360,37 @@ def generate_plan(
     return generator.generate(request)
 
 
+def _merge_edits(base: ManualEdits, override: Optional[ManualEdits]) -> ManualEdits:
+    """显式参数(override)覆盖自然语言解析(base)的非空字段。"""
+    if override is None:
+        return base
+    data = base.model_dump()
+    for key, value in override.model_dump().items():
+        if value is not None:
+            data[key] = value
+    return ManualEdits(**data)
+
+
 @router.post("/api/plans/regenerate", response_model=PipelineResult)
 def regenerate_plan(
     request: GeneratePlanRequest,
     generator: PlanGenerator = Depends(build_plan_generator),
     report_service: ReportService = Depends(build_report_service),
+    edit_parser: NaturalEditParser = Depends(build_natural_edit_parser),
 ) -> PipelineResult:
-    """人工微调回灌：用前端回传的 structure_dna + material_library + manual_edits 重生成方案。"""
+    """人工微调回灌：structure_dna + material_library + manual_edits / 自然语言 instruction 重生成方案。"""
     if request.structure_dna is None or request.material_library is None:
         raise HTTPException(
             status_code=400,
             detail="regenerate requires structure_dna and material_library in the request body",
         )
+    if request.instruction:
+        context = request.target_title or (
+            request.material_library.target.title if request.material_library.target else ""
+        )
+        parsed = edit_parser.parse(request.instruction, context)
+        if parsed is not None:
+            request.manual_edits = _merge_edits(parsed, request.manual_edits)
     try:
         edit_plan = generator.generate(request)
     except ValidationError as error:
@@ -378,6 +401,20 @@ def regenerate_plan(
         edit_plan=edit_plan,
         comparison_report=report_service.comparison_report(edit_plan),
     )
+
+
+@router.post("/api/edits/interpret", response_model=ManualEdits)
+def interpret_edit(
+    request: InterpretEditRequest,
+    edit_parser: NaturalEditParser = Depends(build_natural_edit_parser),
+) -> ManualEdits:
+    """把一句话改片指令解析成结构化 ManualEdits(供前端填充微调表单)。"""
+    if not edit_parser.enabled:
+        raise HTTPException(status_code=503, detail="natural language editing is not configured")
+    edits = edit_parser.parse(request.instruction, request.context)
+    if edits is None:
+        raise HTTPException(status_code=502, detail="could not interpret the instruction")
+    return edits
 
 
 @router.post("/api/reports/comparison")
@@ -406,25 +443,23 @@ def run_demo_pipeline(
 
 @router.post("/api/pipeline/compare")
 def compare_variants(
-    pipeline: DemoPipeline = Depends(build_demo_pipeline),
+    payload: PipelineResult,
+    generator: PlanGenerator = Depends(build_plan_generator),
 ) -> Dict[str, Any]:
-    """Generate the same structure under all three variants for side-by-side compare."""
-    target = demo_target()
-    sample_request = AnalyzeSampleRequest(project_id="case_001", video_id="sample_001", use_mock=True)
-    materials_request = AnalyzeMaterialsRequest(project_id="case_001", target=target, use_mock=True)
+    """用当前方案的 structure_dna + material_library 生成三个 variant 做并排对比。"""
     variants = []
     for variant in ("balanced", "high_click", "high_conversion"):
-        result = pipeline.run(
-            sample_request,
-            materials_request,
+        plan = generator.generate(
             GeneratePlanRequest(
-                project_id="case_001",
-                target_title=target.title,
+                project_id=payload.edit_plan.project_id,
+                target_title=payload.edit_plan.target_title,
                 variant=variant,
-                use_mock=True,
-            ),
+                structure_dna=payload.structure_dna,
+                material_library=payload.material_library,
+                use_mock=False,
+            )
         )
-        variants.append({"variant": variant, "edit_plan": result.edit_plan.model_dump()})
+        variants.append({"variant": variant, "edit_plan": plan.model_dump()})
     return {"variants": variants}
 
 

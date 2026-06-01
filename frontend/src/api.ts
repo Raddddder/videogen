@@ -140,6 +140,7 @@ export async function regeneratePlan(
   data: PipelineResult,
   edits: ManualEditsPayload,
   variant: string,
+  instruction?: string,
 ): Promise<PipelineResult> {
   const response = await fetch(`${API_BASE_URL}/api/plans/regenerate`, {
     method: "POST",
@@ -151,6 +152,7 @@ export async function regeneratePlan(
       structure_dna: data.structure_dna,
       material_library: data.material_library,
       manual_edits: edits,
+      instruction: instruction || null,
       use_mock: false,
     }),
   });
@@ -160,10 +162,24 @@ export async function regeneratePlan(
   return response.json();
 }
 
-export async function compareVariants(): Promise<VariantComparison> {
+/** 自然语言改片：把一句话指令解析成结构化 ManualEdits，供前端填充表单。 */
+export async function interpretEdits(instruction: string, context: string): Promise<ManualEditsPayload> {
+  const response = await fetch(`${API_BASE_URL}/api/edits/interpret`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({instruction, context}),
+  });
+  if (!response.ok) {
+    throw new Error(`Interpret failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function compareVariants(data: PipelineResult): Promise<VariantComparison> {
   const response = await fetch(`${API_BASE_URL}/api/pipeline/compare`, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data),
   });
 
   if (!response.ok) {
