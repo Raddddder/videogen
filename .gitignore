@@ -8,6 +8,7 @@ out
 
 # Rendered previews / exports
 public/poster-demo*.mp4
+!public/poster-demo-v5.mp4
 public/preview*.png
 # Viral structure migration engine
 backend/.venv/

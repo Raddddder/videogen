@@ -180,7 +180,45 @@ class MediaProbe:
         try:
             return json.loads(result.stdout)
         except json.JSONDecodeError as error:
+            repaired = self._repair_truncated_json(result.stdout)
+            if repaired is not None:
+                try:
+                    return json.loads(repaired)
+                except json.JSONDecodeError:
+                    pass
             raise MediaProbeError("ffprobe returned invalid JSON") from error
+
+    @staticmethod
+    def _repair_truncated_json(payload: str) -> str | None:
+        """Handle Remotion's bundled Windows ffprobe occasionally omitting final braces."""
+        if not payload.strip().startswith("{"):
+            return None
+
+        stack: list[str] = []
+        in_string = False
+        escaped = False
+        for char in payload:
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+            elif char in "{[":
+                stack.append("}" if char == "{" else "]")
+            elif char in "}]":
+                if not stack or stack[-1] != char:
+                    return None
+                stack.pop()
+
+        if in_string or not stack or len(stack) > 3:
+            return None
+        return payload + "".join(reversed(stack))
 
     @staticmethod
     def _run_command(command: list[str], timeout_sec: int) -> subprocess.CompletedProcess[str]:
