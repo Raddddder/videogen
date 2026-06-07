@@ -1112,6 +1112,28 @@ button {
   gap: 8px;
 }
 
+.workflow-role-copy {
+  margin: 8px 0 14px;
+  color: #475467;
+  line-height: 1.65;
+}
+
+.workflow-role-flow {
+  display: grid;
+  gap: 8px;
+}
+
+.workflow-role-flow section {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 80px) minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
 .result-stack section {
   display: grid;
   grid-template-columns: 12px minmax(0, 92px) minmax(0, 1fr);
@@ -1123,11 +1145,51 @@ button {
   background: #fbfcfe;
 }
 
+.workflow-role-flow b,
+.workflow-role-flow small,
 .result-stack b,
 .result-stack small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.handoff-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.handoff-list article,
+.script-handoff-preview {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.handoff-list b,
+.script-handoff-preview b {
+  font-size: 13px;
+}
+
+.handoff-list small,
+.script-handoff-preview small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #667085;
+  line-height: 1.5;
+}
+
+.script-handoff-preview {
+  margin-top: 12px;
+  border-color: #b8e2d9;
+  background: #f0fdfa;
 }
 
 .pipeline-copy {
@@ -1361,6 +1423,60 @@ button {
   font-weight: 900;
 }
 
+.analysis-role-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.analysis-role-grid section {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.analysis-role-grid span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: #172033;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.analysis-role-grid b,
+.analysis-role-grid small {
+  display: block;
+  min-width: 0;
+}
+
+.analysis-role-grid small {
+  grid-column: 2;
+  color: #667085;
+  line-height: 1.55;
+}
+
+.analysis-handoff-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #b8e2d9;
+  border-radius: 8px;
+  background: #f0fdfa;
+}
+
 .emotion-bars {
   display: flex;
   align-items: end;
@@ -1457,6 +1573,19 @@ button {
 .plan-row p {
   margin: 8px 0;
   line-height: 1.55;
+}
+
+.slot-handoff-tags {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e6eaf0;
+}
+
+.slot-handoff-tags b {
+  color: #475467;
+  font-size: 12px;
 }
 
 .segment-row div span {
@@ -3055,6 +3184,14 @@ button {
   }
 
   .workspace-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-handoff-strip {
     grid-template-columns: 1fr;
   }
 

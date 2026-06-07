@@ -835,6 +835,12 @@ function OverviewFlowView({
   const firstGap = data.edit_plan.missing_slots[0];
   const hasPlan = data.edit_plan.timeline.length > 0;
   const readyArtifacts = hasPlan ? session?.artifacts.filter((artifact) => artifact.state === "ready").length ?? 0 : 0;
+  const analysisHandoff = data.structure_dna.segments.slice(0, 4).map((segment) => ({
+    id: segment.segment_id,
+    label: functionLabels[segment.function],
+    evidence: segment.analysis_reason ?? segment.visual_cue ?? segment.transcript,
+    tags: segment.required_material_tags.slice(0, 3),
+  }));
   const matchSummary = data.edit_plan.timeline.reduce(
     (acc, item) => {
       acc[item.slot_status] += 1;
@@ -945,27 +951,45 @@ function OverviewFlowView({
       </Card>
 
       <Card bordered className="panel">
-        <PanelTitle eyebrow="Next" title="下一步收敛" />
-        <div className="result-stack">
+        <PanelTitle eyebrow="Why" title="样例分析的作用" />
+        <p className="workflow-role-copy">
+          这一步不是最终报告，而是把模板视频拆成后续可执行的结构槽位。素材匹配、方案生成和验收都会消费这里产出的 Structure DNA。
+        </p>
+        <div className="workflow-role-flow" aria-label="样例分析在工作流中的作用">
           <section>
             <span className="status-dot matched" />
-            <b>样例分析</b>
-            <small>{data.structure_dna.structure_formula}</small>
-          </section>
-          <section>
-            <span className={`status-dot ${firstGap ? "missing" : "matched"}`} />
-            <b>素材缺口</b>
-            <small>{firstGap?.suggested_fix ?? "当前槽位已覆盖，可进入方案输出"}</small>
+            <b>输入</b>
+            <small>样例视频、口播、画面节奏</small>
           </section>
           <section>
             <span className="status-dot supplemented" />
-            <b>结果脚本</b>
-            <small>{resultScript}</small>
+            <b>AI 捕获</b>
+            <small>{data.structure_dna.structure_formula || "等待解析结构公式"}</small>
+          </section>
+          <section>
+            <span className={`status-dot ${firstGap ? "missing" : "matched"}`} />
+            <b>输出</b>
+            <small>{firstGap?.suggested_fix ?? "结构槽位已准备给素材匹配使用"}</small>
           </section>
         </div>
+        <div className="handoff-list">
+          {analysisHandoff.map((item) => (
+            <article key={item.id}>
+              <b>{item.label}</b>
+              <small>{item.evidence}</small>
+              <div className="tag-row">
+                {item.tags.map((tag) => <span key={tag}>{tag}</span>)}
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="script-handoff-preview">
+          <b>生成脚本会继承</b>
+          <small>{resultScript}</small>
+        </div>
         <div className="workflow-actions">
-          <Button variant="outline" onClick={onOpenMaterials}>素材匹配</Button>
-          <Button theme="primary" onClick={onOpenAnalysis}>进入样例分析</Button>
+          <Button theme="primary" onClick={onOpenAnalysis}>复核 Structure DNA</Button>
+          <Button variant="outline" onClick={onOpenMaterials}>拿这些槽位去匹配素材</Button>
         </div>
       </Card>
     </div>
@@ -1590,9 +1614,39 @@ function VideoEditorPreview({
 
 function AnalysisView({data, totalDuration}: {data: PipelineResult; totalDuration: number}) {
   const info = data.structure_dna.basic_info;
+  const slotCount = data.structure_dna.segments.length;
+  const handoffTags = Array.from(new Set(data.structure_dna.segments.flatMap((segment) => segment.required_material_tags))).slice(0, 8);
+  const slotCountCopy = slotCount ? `把视频拆成 ${slotCount} 个 Structure DNA 槽位，每个槽位都有时间轴和判断依据。` : "上传样例后，这里会生成可复核的 Structure DNA 槽位。";
 
   return (
     <div className="panel-grid">
+      <Card bordered className="panel wide">
+        <PanelTitle eyebrow="Workflow Role" title="样例分析在流程里的作用" />
+        <div className="analysis-role-grid">
+          <section>
+            <span>1</span>
+            <b>看懂模板</b>
+            <small>从样例视频里识别口播、画面动作、节奏和转化意图。</small>
+          </section>
+          <section>
+            <span>2</span>
+            <b>拆成槽位</b>
+            <small>{slotCountCopy}</small>
+          </section>
+          <section>
+            <span>3</span>
+            <b>交给匹配</b>
+            <small>下一步会按这些槽位寻找用户素材，缺口再用补拍、包装或 AIGC 补齐。</small>
+          </section>
+        </div>
+        <div className="analysis-handoff-strip">
+          <b>给素材匹配的需求标签</b>
+          <div className="tag-row">
+            {handoffTags.length ? handoffTags.map((tag) => <span key={tag}>{tag}</span>) : <span>等待 Structure DNA 输出</span>}
+          </div>
+        </div>
+      </Card>
+
       <Card bordered className="panel wide">
         <PanelTitle eyebrow="Module A" title="样例结构 DNA" />
         <div className="formula">{data.structure_dna.structure_formula}</div>
@@ -1607,10 +1661,10 @@ function AnalysisView({data, totalDuration}: {data: PipelineResult; totalDuratio
       <Card bordered className="panel">
         <PanelTitle eyebrow="Source" title="视频基础信息" />
         <div className="info-list">
-          <Info label="分辨率" value={info ? `${info.width} x ${info.height}` : "mock"} />
-          <Info label="帧率" value={info ? `${info.fps} fps` : "mock"} />
-          <Info label="自动镜头数" value={info ? String(info.shot_count) : String(data.structure_dna.segments.length)} />
-          <Info label="口播" value={info?.has_speech === false ? "否" : "是"} />
+          <Info label="分辨率" value={info ? `${info.width} x ${info.height}` : "待解析"} />
+          <Info label="帧率" value={info ? `${info.fps} fps` : "待解析"} />
+          <Info label="自动镜头数" value={info ? String(info.shot_count) : "待解析"} />
+          <Info label="口播" value={info ? (info.has_speech === false ? "否" : "是") : "待解析"} />
         </div>
       </Card>
 
@@ -1630,6 +1684,12 @@ function AnalysisView({data, totalDuration}: {data: PipelineResult; totalDuratio
                 </small>
               )}
               <small>{segment.visual_cue ?? segment.required_material_tags.join(" / ")}</small>
+              <div className="slot-handoff-tags">
+                <b>下一步匹配素材</b>
+                <div className="tag-row">
+                  {segment.required_material_tags.map((tag) => <span key={tag}>{tag}</span>)}
+                </div>
+              </div>
             </article>
           ))}
         </div>
