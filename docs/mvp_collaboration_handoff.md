@@ -173,6 +173,17 @@ cta
 - 增加一个轻量脚本，批量跑 `outputs/test-videos/*.mp4` 并保存 `StructureDNA` 输出。
 - 建立人工标注对比表：模型 role、人工 role、是否接受。
 
+当前已补充回归脚本：
+
+```bash
+backend/.venv/bin/python scripts/run_structure_regressions.py --mock-ai
+backend/.venv/bin/python scripts/run_structure_regressions.py
+```
+
+- `--mock-ai`：离线烟测，只验证 ffmpeg、结构兜底、回归产物写出。
+- 不带参数：使用当前 `.env` 的真实 ASR / LLM provider 跑回归。
+- 结果会写到 `outputs/regressions/<case_id>/structure_dna.json` 和 `summary.json`，汇总写到 `outputs/regressions/latest_summary.json`。
+
 ## Module B: Material Understanding
 
 当前位置：
@@ -287,3 +298,4 @@ cta
 - `visual_cue` 和 `shot_type` 目前主要来自规则、时长、方向和镜头切分。
 - 对纯音乐、无口播、多人混说的视频，结构判断会低置信兜底。
 - LLM 输出虽然要求 JSON，但仍需保留重试和规则兜底。
+- 当前 preview 渲染虽然已经是真实 mp4，但仍属于轻量 ffmpeg 合成器，不等于成熟剪辑器；适合答辩演示，不适合直接对标专业成片工具。
