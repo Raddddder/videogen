@@ -65,8 +65,10 @@ class MediaRenderer:
         self.fps = fps
         self.timeout_sec = timeout_sec
         self.font_path = next((f for f in _FONT_CANDIDATES if Path(f).exists()), None)
-        bundled_remotion = "compositor-win32" in str(ffmpeg_bin).replace("\\", "/")
-        self.burn_subtitles = burn_subtitles and _PIL_OK and self.font_path is not None and not bundled_remotion
+        # 精简版(Remotion 自带 win32)ffmpeg 缺 lavfi/复杂 filter，走简化路径(直接缩放、无字幕、无音轨)；
+        # 完整 ffmpeg(Mac/Linux/标准安装)走高质量路径：等比缩放+黑边、烧字幕、补静音轨。
+        self.simple_mode = "compositor-win32" in str(ffmpeg_bin).replace("\\", "/")
+        self.burn_subtitles = burn_subtitles and _PIL_OK and self.font_path is not None and not self.simple_mode
 
     def render_preview(
         self,
@@ -123,23 +125,31 @@ class MediaRenderer:
             sub_png = tmp_dir / f"sub_{index:03d}.png"
             self._subtitle_png(sub_text, title, sub_png)
 
+        inputs = list(src_input)
         if sub_png is not None:
-            filter_complex = f"[0:v]{self._scale_pad()}[bg];[bg][1:v]overlay=0:0,format=yuv420p[v]"
-            self._run([
-                self.ffmpeg_bin, "-nostdin", "-y", *src_input, "-i", str(sub_png),
-                "-filter_complex", filter_complex,
-                "-map", "[v]", "-an",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", str(self.fps),
-                "-t", f"{duration:.2f}", str(out),
-            ])
+            inputs += ["-i", str(sub_png)]
+            video_filter = f"[0:v]{self._scale_pad()}[bg];[bg][1:v]overlay=0:0,format=yuv420p[v]"
         else:
-            self._run([
-                self.ffmpeg_bin, "-nostdin", "-y", *src_input,
-                "-vf", self._scale_pad(),
-                "-map", "0:v:0", "-an",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", str(self.fps),
-                "-t", f"{duration:.2f}", str(out),
-            ])
+            video_filter = f"[0:v]{self._scale_pad()},format=yuv420p[v]"
+
+        # 完整 ffmpeg 补一条静音轨，保证成片有标准音频轨且各段一致；精简 ffmpeg 无 lavfi，省略音轨。
+        if self.simple_mode:
+            audio_maps = ["-an"]
+            audio_codec: list[str] = []
+        else:
+            inputs += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+            audio_index = 2 if sub_png is not None else 1
+            audio_maps = ["-map", f"{audio_index}:a"]
+            audio_codec = ["-c:a", "aac", "-ar", "44100", "-ac", "2"]
+
+        self._run([
+            self.ffmpeg_bin, "-nostdin", "-y", *inputs,
+            "-filter_complex", video_filter,
+            "-map", "[v]", *audio_maps,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", str(self.fps),
+            *audio_codec,
+            "-t", f"{duration:.2f}", str(out),
+        ])
         return out
 
     def _subtitle_png(self, text: str, title: Optional[str], out_path: Path) -> None:
@@ -188,7 +198,13 @@ class MediaRenderer:
         return lines[:max_lines] or [text[:12]]
 
     def _scale_pad(self) -> str:
-        return f"scale={self.width}:{self.height},format=yuv420p"
+        # 简化模式直接拉伸(兼容精简 ffmpeg)；完整模式等比缩放并补黑边，避免非 9:16 素材变形。
+        if self.simple_mode:
+            return f"scale={self.width}:{self.height}"
+        return (
+            f"scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,"
+            f"pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2:color={self.BG},setsar=1"
+        )
 
     def _placeholder_image(self, tmp_dir: Path) -> Path:
         path = tmp_dir / "placeholder.png"
