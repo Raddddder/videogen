@@ -744,7 +744,12 @@ export function App() {
           />
         )}
         {activeView === "analysis" && (
-          <AnalysisView data={data} totalDuration={totalSourceDuration} />
+          <AnalysisView
+            data={data}
+            totalDuration={totalSourceDuration}
+            sampleUploading={sampleUploading}
+            onPickSample={() => sampleInputRef.current?.click()}
+          />
         )}
         {activeView === "materials" && (
           <MaterialsView
@@ -1638,7 +1643,17 @@ function VideoEditorPreview({
   );
 }
 
-function AnalysisView({data, totalDuration}: {data: PipelineResult; totalDuration: number}) {
+function AnalysisView({
+  data,
+  totalDuration,
+  sampleUploading,
+  onPickSample,
+}: {
+  data: PipelineResult;
+  totalDuration: number;
+  sampleUploading: boolean;
+  onPickSample: () => void;
+}) {
   const info = data.structure_dna.basic_info;
   const slotCount = data.structure_dna.segments.length;
   const handoffTags = Array.from(new Set(data.structure_dna.segments.flatMap((segment) => segment.required_material_tags))).slice(0, 8);
@@ -1647,7 +1662,12 @@ function AnalysisView({data, totalDuration}: {data: PipelineResult; totalDuratio
   return (
     <div className="panel-grid">
       <Card bordered className="panel wide">
-        <PanelTitle eyebrow="Workflow Role" title="样例分析在流程里的作用" />
+        <div className="material-head-row">
+          <PanelTitle eyebrow="Workflow Role" title="样例分析在流程里的作用" />
+          <Button icon={<CloudUploadIcon />} loading={sampleUploading} theme="primary" onClick={onPickSample}>
+            {sampleUploading ? "解析样例中..." : "上传样例视频"}
+          </Button>
+        </div>
         <div className="analysis-role-grid">
           <section>
             <span>1</span>
@@ -1671,6 +1691,15 @@ function AnalysisView({data, totalDuration}: {data: PipelineResult; totalDuratio
             {handoffTags.length ? handoffTags.map((tag) => <span key={tag}>{tag}</span>) : <span>等待 Structure DNA 输出</span>}
           </div>
         </div>
+        {!slotCount && (
+          <div className="analysis-empty-action">
+            <b>从导入样例开始</b>
+            <small>上传模板视频后，后端会跑样例解析、ASR 和结构拆分，生成这里的时间轴与槽位。</small>
+            <Button icon={<CloudUploadIcon />} loading={sampleUploading} theme="primary" onClick={onPickSample}>
+              {sampleUploading ? "正在上传解析..." : "选择样例视频"}
+            </Button>
+          </div>
+        )}
       </Card>
 
       <Card bordered className="panel wide">

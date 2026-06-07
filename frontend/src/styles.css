@@ -1477,6 +1477,34 @@ button {
   background: #f0fdfa;
 }
 
+.analysis-empty-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 14px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px dashed #93c5fd;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.analysis-empty-action b,
+.analysis-empty-action small {
+  min-width: 0;
+}
+
+.analysis-empty-action small {
+  grid-column: 1;
+  color: #475467;
+  line-height: 1.55;
+}
+
+.analysis-empty-action .t-button {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+
 .emotion-bars {
   display: flex;
   align-items: end;
@@ -3247,6 +3275,16 @@ button {
 
   .analysis-handoff-strip {
     grid-template-columns: 1fr;
+  }
+
+  .analysis-empty-action {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-empty-action .t-button {
+    grid-row: auto;
+    grid-column: auto;
+    width: 100%;
   }
 
   .workspace-metrics {
