@@ -326,7 +326,7 @@ export function App() {
     setDraft(buildDraftFromSession(session));
     setData(buildEmptyPipeline(session));
     setActiveSegmentId("");
-    setActiveView("analysis");
+    setActiveView("overview");
     setApiState("新会话待上传分析");
   };
 
@@ -1001,6 +1001,13 @@ function OverviewFlowView({
 
   return (
     <div className="panel-grid overview-flow-grid">
+      <WizardStrip
+        data={data}
+        sampleUploading={sampleUploading}
+        onPickSample={onPickSample}
+        onOpenMaterials={onOpenMaterials}
+        onOpenPlan={onOpenPlan}
+      />
       <Card bordered className="panel wide">
         <div className="material-head-row">
           <PanelTitle eyebrow="Overview" title="会话总览" />
@@ -1134,6 +1141,52 @@ function OverviewFlowView({
         </div>
       </Card>
     </div>
+  );
+}
+
+function WizardStrip({
+  data,
+  sampleUploading,
+  onPickSample,
+  onOpenMaterials,
+  onOpenPlan,
+}: {
+  data: PipelineResult;
+  sampleUploading: boolean;
+  onPickSample: () => void;
+  onOpenMaterials: () => void;
+  onOpenPlan: () => void;
+}) {
+  const hasStructure = data.structure_dna.segments.length > 0;
+  const hasMaterials = data.material_library.materials.length > 0;
+  const hasPlan = data.edit_plan.timeline.length > 0;
+  const steps = [
+    {n: 1, label: "上传样例视频", hint: "AI 拆解爆款结构", done: hasStructure, action: onPickSample, cta: sampleUploading ? "解析中…" : "上传样例"},
+    {n: 2, label: "上传我的素材", hint: "视频 / 图片 / 文案", done: hasMaterials, action: onOpenMaterials, cta: "去上传素材"},
+    {n: 3, label: "生成迁移方案", hint: "结构迁移 + 缺口补全", done: hasPlan, action: onOpenPlan, cta: "查看方案"},
+    {n: 4, label: "导出成片", hint: "9:16 带字幕 mp4", done: false, action: onOpenPlan, cta: "去导出"},
+  ];
+  const currentIndex = steps.findIndex((step) => !step.done);
+  return (
+    <section className="wizard-strip" aria-label="0 到 1 引导流程">
+      {steps.map((step, index) => {
+        const state = step.done ? "done" : index === currentIndex ? "current" : "todo";
+        return (
+          <div key={step.n} className={`wizard-step ${state}`}>
+            <span className="wizard-index">{step.done ? "✓" : step.n}</span>
+            <div className="wizard-text">
+              <b>{step.label}</b>
+              <small>{step.hint}</small>
+            </div>
+            {state === "current" && (
+              <Button size="small" theme="primary" loading={step.n === 1 && sampleUploading} onClick={step.action}>
+                {step.cta}
+              </Button>
+            )}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
