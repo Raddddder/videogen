@@ -4,14 +4,22 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    _PIL_OK = True
+except ImportError:  # pragma: no cover
+    _PIL_OK = False
+
 from app.api.dependencies import (
     build_aigc_image_client,
+    build_brief_inferer,
     build_demo_pipeline,
     build_repository,
     build_material_analyzer,
     build_media_renderer,
     build_natural_edit_parser,
     build_plan_generator,
+    build_project_store,
     build_report_service,
     build_structure_analyzer,
 )
@@ -21,6 +29,7 @@ from app.core.settings import get_settings
 from app.models.contracts import (
     AnalyzeMaterialsRequest,
     AnalyzeSampleRequest,
+    BriefInference,
     EditPlan,
     GeneratePlanRequest,
     InterpretEditRequest,
@@ -36,10 +45,12 @@ from app.services.asr_service import AsrServiceError
 from app.services.json_repository import JsonRepository
 from app.services.material_analyzer import MaterialAnalyzer
 from app.services.aigc_image import AigcImageClient
+from app.services.brief_inferer import BriefInferer
 from app.services.media_probe import MediaProbeDependencyError, MediaProbeError
 from app.services.media_renderer import MediaRenderer, MediaRenderError
 from app.services.natural_edit_parser import NaturalEditParser
 from app.services.plan_generator import PlanGenerator
+from app.services.project_store import ProjectStore
 from app.services.report_service import ReportService
 from app.services.structure_analyzer import StructureAnalyzer
 
@@ -56,6 +67,14 @@ ALLOWED_MATERIAL_SUFFIXES = {
 }
 SUPPORTED_VARIANTS = {"balanced", "high_click", "high_conversion", "fast_pacing", "premium"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+_FONT_CANDIDATES = [
+    "C:/Windows/Fonts/msyh.ttc",
+    "C:/Windows/Fonts/simhei.ttf",
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+]
 
 
 @router.get("/health")
@@ -75,6 +94,20 @@ def health() -> Dict[str, Any]:
 @router.get("/api/config")
 def config() -> Dict[str, Any]:
     return get_settings().config
+
+
+@router.get("/api/projects")
+def list_projects(store: ProjectStore = Depends(build_project_store)) -> Dict[str, Any]:
+    return {"projects": store.list_projects()}
+
+
+@router.get("/api/projects/{project_id}")
+def get_project(project_id: str, store: ProjectStore = Depends(build_project_store)) -> Dict[str, Any]:
+    safe_project_id = _safe_path_part(project_id, "case_001")
+    project = store.get_project(safe_project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
 
 
 @router.post("/api/samples/analyze", response_model=StructureDNA)
@@ -110,6 +143,7 @@ def upload_sample_pipeline(
     material_analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
     plan_generator: PlanGenerator = Depends(build_plan_generator),
     report_service: ReportService = Depends(build_report_service),
+    store: ProjectStore = Depends(build_project_store),
 ) -> PipelineResult:
     if variant not in SUPPORTED_VARIANTS:
         raise HTTPException(status_code=400, detail=f"Unsupported variant: {variant}")
@@ -127,7 +161,7 @@ def upload_sample_pipeline(
             project_id=safe_project_id,
             target=target,
             material_uris=material_uri_list,
-            use_mock=not material_uri_list,
+            use_mock=False,
         )
     )
     try:
@@ -144,12 +178,14 @@ def upload_sample_pipeline(
     except ValidationError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    return PipelineResult(
+    result = PipelineResult(
         structure_dna=structure_dna,
         material_library=material_library,
         edit_plan=edit_plan,
         comparison_report=report_service.comparison_report(edit_plan),
     )
+    store.upsert_pipeline(result, stage="plan", status="ready")
+    return result
 
 
 @router.post("/api/pipeline/upload-all", response_model=PipelineResult)
@@ -166,6 +202,7 @@ def upload_all_pipeline(
     material_analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
     plan_generator: PlanGenerator = Depends(build_plan_generator),
     report_service: ReportService = Depends(build_report_service),
+    store: ProjectStore = Depends(build_project_store),
 ) -> PipelineResult:
     """Full real pipeline: uploaded sample (A) + uploaded user materials (B) -> plan (C)."""
     if variant not in SUPPORTED_VARIANTS:
@@ -188,7 +225,7 @@ def upload_all_pipeline(
             raise HTTPException(status_code=500, detail=f"FFmpeg dependency unavailable: {error}") from error
     else:
         material_library = material_analyzer.analyze(
-            AnalyzeMaterialsRequest(project_id=safe_project_id, target=target, use_mock=True)
+            AnalyzeMaterialsRequest(project_id=safe_project_id, target=target, use_mock=False)
         )
 
     try:
@@ -205,12 +242,14 @@ def upload_all_pipeline(
     except ValidationError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    return PipelineResult(
+    result = PipelineResult(
         structure_dna=structure_dna,
         material_library=material_library,
         edit_plan=edit_plan,
         comparison_report=report_service.comparison_report(edit_plan),
     )
+    store.upsert_pipeline(result, stage="plan", status="ready")
+    return result
 
 
 def _save_uploaded_sample(file: UploadFile, project_id: str, video_id: str) -> tuple[str, str, Path]:
@@ -281,6 +320,68 @@ def _run_structure_analysis(request: AnalyzeSampleRequest, analyzer: StructureAn
 def _safe_path_part(value: str, fallback: str) -> str:
     safe_value = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in value)
     return safe_value.strip("_") or fallback
+
+
+def _font(size: int):
+    if not _PIL_OK:
+        return None
+    for item in _FONT_CANDIDATES:
+        path = Path(item)
+        if path.exists():
+            return ImageFont.truetype(str(path), size)
+    return ImageFont.load_default()
+
+
+def _wrap_card_text(draw: Any, text: str, font: Any, max_width: int) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    for char in text:
+        probe = current + char
+        if char == "\n" or draw.textlength(probe, font=font) > max_width:
+            if current:
+                lines.append(current.strip())
+            current = "" if char == "\n" else char
+        else:
+            current = probe
+    if current.strip():
+        lines.append(current.strip())
+    return lines
+
+
+def _render_aigc_card(scene: str, label: str, out_path: Path) -> Optional[Path]:
+    if not _PIL_OK:
+        return None
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    width, height = 1080, 1920
+    img = Image.new("RGB", (width, height), "#f8fbff")
+    draw = ImageDraw.Draw(img)
+    title_font = _font(68)
+    body_font = _font(48)
+    small_font = _font(32)
+    if not title_font or not body_font or not small_font:
+        return None
+
+    for y in range(height):
+        blend = y / height
+        draw.line(
+            [(0, y), (width, y)],
+            fill=(int(241 + 10 * blend), int(248 - 8 * blend), int(255 - 18 * blend)),
+        )
+    draw.rounded_rectangle([72, 120, width - 72, height - 120], radius=44, fill="#ffffff", outline="#dbeafe", width=3)
+    draw.rounded_rectangle([110, 170, 390, 232], radius=31, fill="#dbeafe")
+    draw.text((140, 184), "AIGC 图文卡", font=small_font, fill="#1d4ed8")
+    draw.text((110, 300), label, font=title_font, fill="#0f172a")
+
+    y = 430
+    for line in _wrap_card_text(draw, scene, body_font, width - 220)[:9]:
+        draw.text((110, y), line, font=body_font, fill="#172033")
+        y += 72
+
+    draw.rounded_rectangle([110, height - 380, width - 110, height - 230], radius=28, fill="#ecfdf3")
+    draw.text((150, height - 342), "可用于 Remotion / 预览合成", font=small_font, fill="#047857")
+    draw.text((150, height - 292), "作为缺口槽位的临时画面素材", font=small_font, fill="#475467")
+    img.save(out_path)
+    return out_path
 
 
 def _split_form_list(value: str) -> list[str]:
@@ -417,6 +518,15 @@ def interpret_edit(
     return edits
 
 
+@router.post("/api/brief/infer", response_model=BriefInference)
+def infer_brief(
+    payload: PipelineResult,
+    inferer: BriefInferer = Depends(build_brief_inferer),
+) -> BriefInference:
+    """AI 生成目标信息配置：主题、卖点和素材状态说明。"""
+    return inferer.infer(payload)
+
+
 @router.post("/api/reports/comparison")
 def comparison_report(
     edit_plan: EditPlan,
@@ -467,6 +577,7 @@ def compare_variants(
 def render_preview(
     payload: PipelineResult,
     renderer: MediaRenderer = Depends(build_media_renderer),
+    store: ProjectStore = Depends(build_project_store),
 ) -> Dict[str, Any]:
     """Compose a real 9:16 preview.mp4 from the Edit Plan + materials."""
     project_id = _safe_path_part(payload.edit_plan.project_id, "case_001")
@@ -476,7 +587,10 @@ def render_preview(
     except MediaRenderError as error:
         raise HTTPException(status_code=500, detail=f"Preview render failed: {error}") from error
     relative = output_path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
-    return {"preview_url": f"/{relative}", "preview_path": relative}
+    preview_url = f"/{relative}"
+    store.upsert_pipeline(payload, stage="preview", status="ready", preview_url=preview_url)
+    store.set_preview(project_id, preview_url)
+    return {"preview_url": preview_url, "preview_path": relative}
 
 
 _AIGC_SCENE_LABELS = {
@@ -495,44 +609,81 @@ def aigc_fill_gaps(
     payload: PipelineResult,
     aigc: AigcImageClient = Depends(build_aigc_image_client),
 ) -> PipelineResult:
-    """对缺口段(无匹配素材)用文生图生成补全画面，挂为新素材并标 supplemented。"""
-    if not aigc.enabled:
-        raise HTTPException(status_code=503, detail="AIGC image generation not configured")
-
+    """对缺口段生成可合成画面素材，挂为新素材并标 supplemented。"""
     project_id = _safe_path_part(payload.edit_plan.project_id, "case_001")
     aigc_dir = OUTPUTS_DIR / project_id / "aigc"
     materials = list(payload.material_library.materials)
+    material_index = {material.material_id: index for index, material in enumerate(materials)}
     filled = 0
     for item in payload.edit_plan.timeline:
-        if item.selected_material_id:
+        existing = materials[material_index[item.selected_material_id]] if item.selected_material_id in material_index else None
+        should_upgrade_copy_card = (
+            existing is not None
+            and existing.analysis_source == "aigc"
+            and existing.preview_url is None
+        )
+        if item.selected_material_id and not should_upgrade_copy_card:
             continue
         scene = f"{_AIGC_SCENE_LABELS.get(item.function, '')}，{item.script}".strip("，")
-        saved = aigc.generate(scene, aigc_dir / f"{item.target_segment_id}.png")
+        label = _AIGC_SCENE_LABELS.get(item.function, item.function)
+        saved = aigc.generate(scene, aigc_dir / f"{item.target_segment_id}.png") if aigc.enabled else None
+        card_source = "image_generated"
         if saved is None:
-            continue
-        rel = saved.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
-        materials.append(
-            Material(
+            saved = _render_aigc_card(scene, label, aigc_dir / f"{item.target_segment_id}_remotion_card.png")
+            card_source = "remotion_card"
+
+        if saved is not None:
+            rel = saved.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+            material = Material(
                 material_id=f"aigc_{item.target_segment_id}",
                 type="image",
                 file_name=saved.name,
                 duration_sec=0.0,
                 aspect_ratio="9:16",
                 usable_ranges=[],
-                shot_type="aigc_generated",
+                shot_type=f"aigc_{card_source}",
                 semantic_role=item.function,
-                tags=["AIGC", _AIGC_SCENE_LABELS.get(item.function, item.function)],
+                tags=["AIGC", "image_card", "remotion_ready", label],
                 emotion_score=5.0,
-                quality_score=0.8,
+                quality_score=0.8 if card_source == "image_generated" else 0.72,
                 crop_risk="low",
-                transcript=item.script,
+                transcript=f"AIGC 画面补全：{scene}",
                 preview_url=f"/{rel}",
                 analysis_source="aigc",
             )
-        )
-        item.selected_material_id = f"aigc_{item.target_segment_id}"
+            item.explanation = (
+                f"{item.function} 槽位已用 AIGC 生成画面补全。"
+                if card_source == "image_generated"
+                else f"{item.function} 槽位已用本地图文卡补全，可用于 Remotion 或预览合成。"
+            )
+        else:
+            material = Material(
+                material_id=f"aigc_{item.target_segment_id}",
+                type="copy",
+                file_name=f"{item.target_segment_id}_aigc_brief.txt",
+                duration_sec=0.0,
+                aspect_ratio="9:16",
+                usable_ranges=[],
+                shot_type="aigc_copy_card",
+                semantic_role=item.function,
+                tags=["AIGC", "copy_card", _AIGC_SCENE_LABELS.get(item.function, item.function)],
+                emotion_score=5.0,
+                quality_score=0.62,
+                crop_risk="low",
+                transcript=f"建议生成画面：{scene}",
+                preview_url=None,
+                analysis_source="aigc",
+            )
+            item.explanation = f"{item.function} 槽位暂无图片生成配置，已降级为 AIGC 文案卡补全建议。"
+        if material.material_id in material_index:
+            materials[material_index[material.material_id]] = material
+        else:
+            material_index[material.material_id] = len(materials)
+            materials.append(material)
+        item.selected_material_id = material.material_id
         item.slot_status = "supplemented"
         item.completion_strategy = "aigc"
+        item.supplement_instruction = material.transcript
         filled += 1
 
     payload.material_library.materials = materials

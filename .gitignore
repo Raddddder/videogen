@@ -8,6 +8,7 @@ out
 
 # Rendered previews / exports
 public/poster-demo*.mp4
+!public/poster-demo-v5.mp4
 public/preview*.png
 # Viral structure migration engine
 backend/.venv/
@@ -17,5 +18,7 @@ frontend/node_modules/
 frontend/dist/
 outputs/*
 !outputs/.gitkeep
+data/*.sqlite3
+!data/.gitkeep
 public/structure-preview*.png
 public/structure-preview*.mp4

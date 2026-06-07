@@ -1,5 +1,7 @@
 import subprocess
 import tempfile
+import struct
+import zlib
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +16,8 @@ except ImportError:  # pragma: no cover
 
 
 _FONT_CANDIDATES = [
+    "C:/Windows/Fonts/msyh.ttc",
+    "C:/Windows/Fonts/simhei.ttf",
     "/System/Library/Fonts/STHeiti Medium.ttc",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/Library/Fonts/Arial Unicode.ttf",
@@ -61,7 +65,8 @@ class MediaRenderer:
         self.fps = fps
         self.timeout_sec = timeout_sec
         self.font_path = next((f for f in _FONT_CANDIDATES if Path(f).exists()), None)
-        self.burn_subtitles = burn_subtitles and _PIL_OK and self.font_path is not None
+        bundled_remotion = "compositor-win32" in str(ffmpeg_bin).replace("\\", "/")
+        self.burn_subtitles = burn_subtitles and _PIL_OK and self.font_path is not None and not bundled_remotion
 
     def render_preview(
         self,
@@ -102,7 +107,6 @@ class MediaRenderer:
     ) -> Path:
         out = tmp_dir / f"seg_{index:03d}.mp4"
         source_file = self._resolve_file(material)
-        silent_audio = ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
 
         if material and material.type == "video_clip" and source_file:
             start = item.source_range[0] if item.source_range else 0.0
@@ -110,7 +114,7 @@ class MediaRenderer:
         elif material and material.type == "image" and source_file:
             src_input = ["-loop", "1", "-i", str(source_file)]
         else:
-            src_input = ["-f", "lavfi", "-i", f"color=c={self.BG}:s={self.width}x{self.height}:r={self.fps}"]
+            src_input = ["-loop", "1", "-i", str(self._placeholder_image(tmp_dir))]
 
         sub_png: Optional[Path] = None
         if self.burn_subtitles:
@@ -120,20 +124,22 @@ class MediaRenderer:
             self._subtitle_png(sub_text, title, sub_png)
 
         if sub_png is not None:
-            filter_complex = f"[0:v]{self._scale_pad()}[bg];[bg][2:v]overlay=0:0,format=yuv420p[v]"
-            inputs = [*src_input, *silent_audio, "-i", str(sub_png)]
+            filter_complex = f"[0:v]{self._scale_pad()}[bg];[bg][1:v]overlay=0:0,format=yuv420p[v]"
+            self._run([
+                self.ffmpeg_bin, "-nostdin", "-y", *src_input, "-i", str(sub_png),
+                "-filter_complex", filter_complex,
+                "-map", "[v]", "-an",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", str(self.fps),
+                "-t", f"{duration:.2f}", str(out),
+            ])
         else:
-            filter_complex = f"[0:v]{self._scale_pad()},format=yuv420p[v]"
-            inputs = [*src_input, *silent_audio]
-
-        self._run([
-            self.ffmpeg_bin, "-nostdin", "-y", *inputs,
-            "-filter_complex", filter_complex,
-            "-map", "[v]", "-map", "1:a",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", str(self.fps),
-            "-c:a", "aac", "-ar", "44100", "-ac", "2",
-            "-t", f"{duration:.2f}", str(out),
-        ])
+            self._run([
+                self.ffmpeg_bin, "-nostdin", "-y", *src_input,
+                "-vf", self._scale_pad(),
+                "-map", "0:v:0", "-an",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", str(self.fps),
+                "-t", f"{duration:.2f}", str(out),
+            ])
         return out
 
     def _subtitle_png(self, text: str, title: Optional[str], out_path: Path) -> None:
@@ -182,10 +188,33 @@ class MediaRenderer:
         return lines[:max_lines] or [text[:12]]
 
     def _scale_pad(self) -> str:
-        return (
-            f"scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,"
-            f"pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2:color={self.BG},setsar=1"
+        return f"scale={self.width}:{self.height},format=yuv420p"
+
+    def _placeholder_image(self, tmp_dir: Path) -> Path:
+        path = tmp_dir / "placeholder.png"
+        if path.exists():
+            return path
+
+        rgb = bytes.fromhex(self.BG.removeprefix("0x"))
+        raw_row = b"\x00" + (rgb * self.width)
+        raw = raw_row * self.height
+
+        def chunk(name: bytes, data: bytes) -> bytes:
+            return (
+                struct.pack(">I", len(data))
+                + name
+                + data
+                + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
+            )
+
+        payload = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", self.width, self.height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, level=1))
+            + chunk(b"IEND", b"")
         )
+        path.write_bytes(payload)
+        return path
 
     @staticmethod
     def _resolve_file(material: Optional[Material]) -> Optional[Path]:

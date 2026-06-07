@@ -4,6 +4,29 @@ export type VariantComparison = {
   variants: Array<{variant: string; edit_plan: EditPlan}>;
 };
 
+export type BriefInference = {
+  title: string;
+  category: string;
+  selling_points: string[];
+  material_brief: string;
+  confidence: number;
+  reason: string;
+};
+
+export type ProjectRecord = {
+  project_id: string;
+  title: string;
+  stage: string;
+  status: string;
+  preview_url?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectDetail = ProjectRecord & {
+  pipeline: PipelineResult;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 /** Resolve a backend-relative asset path (e.g. /outputs/... or /public/...) against the API host. */
@@ -37,6 +60,26 @@ function appendTarget(formData: FormData, options: TargetOptions): void {
   }
 }
 
+async function apiError(response: Response, label: string): Promise<Error> {
+  let detail = "";
+  try {
+    const data = await response.json();
+    if (Array.isArray(data.detail)) {
+      detail = data.detail.map((item: {loc?: unknown; msg?: string}) => {
+        const loc = Array.isArray(item.loc) ? item.loc.join(".") : "";
+        return [loc, item.msg].filter(Boolean).join(": ");
+      }).join("; ");
+    } else if (data.detail) {
+      detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+    } else {
+      detail = JSON.stringify(data);
+    }
+  } catch {
+    detail = await response.text().catch(() => "");
+  }
+  return new Error(`${label}: ${response.status}${detail ? ` - ${detail}` : ""}`);
+}
+
 /** Module B: upload real user material files, get a true MaterialLibrary back. */
 export async function uploadMaterials(
   files: File[],
@@ -52,7 +95,7 @@ export async function uploadMaterials(
   });
 
   if (!response.ok) {
-    throw new Error(`Material upload failed: ${response.status}`);
+    throw await apiError(response, "Material upload failed");
   }
 
   return response.json();
@@ -79,7 +122,7 @@ export async function uploadAllPipeline(
   });
 
   if (!response.ok) {
-    throw new Error(`Full pipeline failed: ${response.status}`);
+    throw await apiError(response, "Full pipeline failed");
   }
 
   return response.json();
@@ -92,7 +135,7 @@ export async function runDemoPipeline(): Promise<PipelineResult> {
   });
 
   if (!response.ok) {
-    throw new Error(`Demo pipeline failed: ${response.status}`);
+    throw await apiError(response, "Demo pipeline failed");
   }
 
   return response.json();
@@ -108,7 +151,7 @@ export async function renderPreview(
   });
 
   if (!response.ok) {
-    throw new Error(`Preview render failed: ${response.status}`);
+    throw await apiError(response, "Preview render failed");
   }
 
   return response.json();
@@ -122,7 +165,37 @@ export async function fillGaps(data: PipelineResult): Promise<PipelineResult> {
     body: JSON.stringify(data),
   });
   if (!response.ok) {
-    throw new Error(`AIGC fill-gaps failed: ${response.status}`);
+    throw await apiError(response, "AIGC fill-gaps failed");
+  }
+  return response.json();
+}
+
+export async function listProjects(): Promise<ProjectRecord[]> {
+  const response = await fetch(`${API_BASE_URL}/api/projects`);
+  if (!response.ok) {
+    throw await apiError(response, "Project list failed");
+  }
+  const data = await response.json();
+  return data.projects ?? [];
+}
+
+export async function getProject(projectId: string): Promise<ProjectDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}`);
+  if (!response.ok) {
+    throw await apiError(response, "Project load failed");
+  }
+  return response.json();
+}
+
+/** AI 推断目标信息配置：标题/主题、核心卖点、素材状态说明。 */
+export async function inferBrief(data: PipelineResult): Promise<BriefInference> {
+  const response = await fetch(`${API_BASE_URL}/api/brief/infer`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    throw await apiError(response, "Brief infer failed");
   }
   return response.json();
 }
@@ -157,7 +230,7 @@ export async function regeneratePlan(
     }),
   });
   if (!response.ok) {
-    throw new Error(`Regenerate failed: ${response.status}`);
+    throw await apiError(response, "Regenerate failed");
   }
   return response.json();
 }
@@ -170,7 +243,7 @@ export async function interpretEdits(instruction: string, context: string): Prom
     body: JSON.stringify({instruction, context}),
   });
   if (!response.ok) {
-    throw new Error(`Interpret failed: ${response.status}`);
+    throw await apiError(response, "Interpret failed");
   }
   return response.json();
 }
@@ -183,7 +256,7 @@ export async function compareVariants(data: PipelineResult): Promise<VariantComp
   });
 
   if (!response.ok) {
-    throw new Error(`Variant compare failed: ${response.status}`);
+    throw await apiError(response, "Variant compare failed");
   }
 
   return response.json();
@@ -204,7 +277,7 @@ export async function uploadSampleVideo(
   });
 
   if (!response.ok) {
-    throw new Error(`Sample upload failed: ${response.status}`);
+    throw await apiError(response, "Sample upload failed");
   }
 
   return response.json();
@@ -248,7 +321,7 @@ export async function uploadSamplePipeline(
   });
 
   if (!response.ok) {
-    throw new Error(`Sample pipeline failed: ${response.status}`);
+    throw await apiError(response, "Sample pipeline failed");
   }
 
   return response.json();

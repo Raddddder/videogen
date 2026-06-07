@@ -85,7 +85,7 @@ export type Material = {
   transcript: string;
   key_visuals?: string[];
   preview_url?: string | null;
-  analysis_source?: "mock" | "rule" | "vlm";
+  analysis_source?: "mock" | "rule" | "vlm" | "aigc";
 };
 
 export type MaterialLibrary = {
