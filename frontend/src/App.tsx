@@ -618,7 +618,7 @@ export function App() {
             <span>会话管理</span>
             <strong>{sessions.length}</strong>
           </div>
-          <Button block variant="outline" onClick={handleCreateSession}>
+          <Button block className="session-create-button" theme="primary" onClick={handleCreateSession}>
             新建会话
           </Button>
           <div className="session-list">
