@@ -6,12 +6,14 @@ from pydantic import ValidationError
 
 from app.api.dependencies import (
     build_aigc_image_client,
+    build_brief_inferer,
     build_demo_pipeline,
     build_repository,
     build_material_analyzer,
     build_media_renderer,
     build_natural_edit_parser,
     build_plan_generator,
+    build_project_store,
     build_report_service,
     build_structure_analyzer,
 )
@@ -21,6 +23,7 @@ from app.core.settings import get_settings
 from app.models.contracts import (
     AnalyzeMaterialsRequest,
     AnalyzeSampleRequest,
+    BriefInference,
     EditPlan,
     GeneratePlanRequest,
     InterpretEditRequest,
@@ -36,10 +39,12 @@ from app.services.asr_service import AsrServiceError
 from app.services.json_repository import JsonRepository
 from app.services.material_analyzer import MaterialAnalyzer
 from app.services.aigc_image import AigcImageClient
+from app.services.brief_inferer import BriefInferer
 from app.services.media_probe import MediaProbeDependencyError, MediaProbeError
 from app.services.media_renderer import MediaRenderer, MediaRenderError
 from app.services.natural_edit_parser import NaturalEditParser
 from app.services.plan_generator import PlanGenerator
+from app.services.project_store import ProjectStore
 from app.services.report_service import ReportService
 from app.services.structure_analyzer import StructureAnalyzer
 
@@ -77,6 +82,20 @@ def config() -> Dict[str, Any]:
     return get_settings().config
 
 
+@router.get("/api/projects")
+def list_projects(store: ProjectStore = Depends(build_project_store)) -> Dict[str, Any]:
+    return {"projects": store.list_projects()}
+
+
+@router.get("/api/projects/{project_id}")
+def get_project(project_id: str, store: ProjectStore = Depends(build_project_store)) -> Dict[str, Any]:
+    safe_project_id = _safe_path_part(project_id, "case_001")
+    project = store.get_project(safe_project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
 @router.post("/api/samples/analyze", response_model=StructureDNA)
 def analyze_sample(
     request: AnalyzeSampleRequest,
@@ -110,6 +129,7 @@ def upload_sample_pipeline(
     material_analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
     plan_generator: PlanGenerator = Depends(build_plan_generator),
     report_service: ReportService = Depends(build_report_service),
+    store: ProjectStore = Depends(build_project_store),
 ) -> PipelineResult:
     if variant not in SUPPORTED_VARIANTS:
         raise HTTPException(status_code=400, detail=f"Unsupported variant: {variant}")
@@ -127,7 +147,7 @@ def upload_sample_pipeline(
             project_id=safe_project_id,
             target=target,
             material_uris=material_uri_list,
-            use_mock=not material_uri_list,
+            use_mock=False,
         )
     )
     try:
@@ -144,12 +164,14 @@ def upload_sample_pipeline(
     except ValidationError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    return PipelineResult(
+    result = PipelineResult(
         structure_dna=structure_dna,
         material_library=material_library,
         edit_plan=edit_plan,
         comparison_report=report_service.comparison_report(edit_plan),
     )
+    store.upsert_pipeline(result, stage="plan", status="ready")
+    return result
 
 
 @router.post("/api/pipeline/upload-all", response_model=PipelineResult)
@@ -166,6 +188,7 @@ def upload_all_pipeline(
     material_analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
     plan_generator: PlanGenerator = Depends(build_plan_generator),
     report_service: ReportService = Depends(build_report_service),
+    store: ProjectStore = Depends(build_project_store),
 ) -> PipelineResult:
     """Full real pipeline: uploaded sample (A) + uploaded user materials (B) -> plan (C)."""
     if variant not in SUPPORTED_VARIANTS:
@@ -188,7 +211,7 @@ def upload_all_pipeline(
             raise HTTPException(status_code=500, detail=f"FFmpeg dependency unavailable: {error}") from error
     else:
         material_library = material_analyzer.analyze(
-            AnalyzeMaterialsRequest(project_id=safe_project_id, target=target, use_mock=True)
+            AnalyzeMaterialsRequest(project_id=safe_project_id, target=target, use_mock=False)
         )
 
     try:
@@ -205,12 +228,14 @@ def upload_all_pipeline(
     except ValidationError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    return PipelineResult(
+    result = PipelineResult(
         structure_dna=structure_dna,
         material_library=material_library,
         edit_plan=edit_plan,
         comparison_report=report_service.comparison_report(edit_plan),
     )
+    store.upsert_pipeline(result, stage="plan", status="ready")
+    return result
 
 
 def _save_uploaded_sample(file: UploadFile, project_id: str, video_id: str) -> tuple[str, str, Path]:
@@ -417,6 +442,15 @@ def interpret_edit(
     return edits
 
 
+@router.post("/api/brief/infer", response_model=BriefInference)
+def infer_brief(
+    payload: PipelineResult,
+    inferer: BriefInferer = Depends(build_brief_inferer),
+) -> BriefInference:
+    """AI 生成目标信息配置：主题、卖点和素材状态说明。"""
+    return inferer.infer(payload)
+
+
 @router.post("/api/reports/comparison")
 def comparison_report(
     edit_plan: EditPlan,
@@ -467,6 +501,7 @@ def compare_variants(
 def render_preview(
     payload: PipelineResult,
     renderer: MediaRenderer = Depends(build_media_renderer),
+    store: ProjectStore = Depends(build_project_store),
 ) -> Dict[str, Any]:
     """Compose a real 9:16 preview.mp4 from the Edit Plan + materials."""
     project_id = _safe_path_part(payload.edit_plan.project_id, "case_001")
@@ -476,7 +511,10 @@ def render_preview(
     except MediaRenderError as error:
         raise HTTPException(status_code=500, detail=f"Preview render failed: {error}") from error
     relative = output_path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
-    return {"preview_url": f"/{relative}", "preview_path": relative}
+    preview_url = f"/{relative}"
+    store.upsert_pipeline(payload, stage="preview", status="ready", preview_url=preview_url)
+    store.set_preview(project_id, preview_url)
+    return {"preview_url": preview_url, "preview_path": relative}
 
 
 _AIGC_SCENE_LABELS = {
@@ -496,9 +534,6 @@ def aigc_fill_gaps(
     aigc: AigcImageClient = Depends(build_aigc_image_client),
 ) -> PipelineResult:
     """对缺口段(无匹配素材)用文生图生成补全画面，挂为新素材并标 supplemented。"""
-    if not aigc.enabled:
-        raise HTTPException(status_code=503, detail="AIGC image generation not configured")
-
     project_id = _safe_path_part(payload.edit_plan.project_id, "case_001")
     aigc_dir = OUTPUTS_DIR / project_id / "aigc"
     materials = list(payload.material_library.materials)
@@ -507,12 +542,10 @@ def aigc_fill_gaps(
         if item.selected_material_id:
             continue
         scene = f"{_AIGC_SCENE_LABELS.get(item.function, '')}，{item.script}".strip("，")
-        saved = aigc.generate(scene, aigc_dir / f"{item.target_segment_id}.png")
-        if saved is None:
-            continue
-        rel = saved.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
-        materials.append(
-            Material(
+        saved = aigc.generate(scene, aigc_dir / f"{item.target_segment_id}.png") if aigc.enabled else None
+        if saved is not None:
+            rel = saved.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+            material = Material(
                 material_id=f"aigc_{item.target_segment_id}",
                 type="image",
                 file_name=saved.name,
@@ -529,10 +562,31 @@ def aigc_fill_gaps(
                 preview_url=f"/{rel}",
                 analysis_source="aigc",
             )
-        )
-        item.selected_material_id = f"aigc_{item.target_segment_id}"
+            item.explanation = f"{item.function} 槽位已用 AIGC 生成画面补全。"
+        else:
+            material = Material(
+                material_id=f"aigc_{item.target_segment_id}",
+                type="copy",
+                file_name=f"{item.target_segment_id}_aigc_brief.txt",
+                duration_sec=0.0,
+                aspect_ratio="9:16",
+                usable_ranges=[],
+                shot_type="aigc_copy_card",
+                semantic_role=item.function,
+                tags=["AIGC", "copy_card", _AIGC_SCENE_LABELS.get(item.function, item.function)],
+                emotion_score=5.0,
+                quality_score=0.62,
+                crop_risk="low",
+                transcript=f"建议生成画面：{scene}",
+                preview_url=None,
+                analysis_source="aigc",
+            )
+            item.explanation = f"{item.function} 槽位暂无图片生成配置，已降级为 AIGC 文案卡补全建议。"
+        materials.append(material)
+        item.selected_material_id = material.material_id
         item.slot_status = "supplemented"
         item.completion_strategy = "aigc"
+        item.supplement_instruction = material.transcript
         filled += 1
 
     payload.material_library.materials = materials

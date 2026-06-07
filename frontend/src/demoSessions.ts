@@ -54,8 +54,8 @@ export const demoSessions: DemoSession[] = [
     caseId: "air_fryer_balanced",
     targetTitle: "空气炸锅结构迁移样例",
     description: "hook、solution、proof、cta 都有素材，pain_point 复用 hook 并靠包装补强。",
-    status: "ready",
-    stage: "preview",
+    status: "needs_review",
+    stage: "sample",
     variant: "balanced",
     materialCount: 4,
     gapProfile: "痛点弱匹配",
@@ -65,7 +65,7 @@ export const demoSessions: DemoSession[] = [
       {label: "Structure DNA", type: "json", state: "ready"},
       {label: "Material Library", type: "json", state: "ready"},
       {label: "Edit Plan", type: "json", state: "ready"},
-      {label: "结果视频", type: "video", state: "mock"},
+      {label: "结果视频", type: "video", state: "pending"},
     ],
     oneStopCapture: {
       mode: "auto_capture",
@@ -267,7 +267,7 @@ export const demoSessions: DemoSession[] = [
       creativeBrief: "明确指出素材不足，不硬剪；用结构重排、AIGC 镜头和包装卡片补齐。",
     },
   },
-];
+].slice(0, 1) as DemoSession[];
 
 function demoSessionsBaseCapture(): DemoSession["oneStopCapture"] {
   return {

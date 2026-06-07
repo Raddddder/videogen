@@ -4,6 +4,29 @@ export type VariantComparison = {
   variants: Array<{variant: string; edit_plan: EditPlan}>;
 };
 
+export type BriefInference = {
+  title: string;
+  category: string;
+  selling_points: string[];
+  material_brief: string;
+  confidence: number;
+  reason: string;
+};
+
+export type ProjectRecord = {
+  project_id: string;
+  title: string;
+  stage: string;
+  status: string;
+  preview_url?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectDetail = ProjectRecord & {
+  pipeline: PipelineResult;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 /** Resolve a backend-relative asset path (e.g. /outputs/... or /public/...) against the API host. */
@@ -123,6 +146,36 @@ export async function fillGaps(data: PipelineResult): Promise<PipelineResult> {
   });
   if (!response.ok) {
     throw new Error(`AIGC fill-gaps failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function listProjects(): Promise<ProjectRecord[]> {
+  const response = await fetch(`${API_BASE_URL}/api/projects`);
+  if (!response.ok) {
+    throw new Error(`Project list failed: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.projects ?? [];
+}
+
+export async function getProject(projectId: string): Promise<ProjectDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}`);
+  if (!response.ok) {
+    throw new Error(`Project load failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+/** AI 推断目标信息配置：标题/主题、核心卖点、素材状态说明。 */
+export async function inferBrief(data: PipelineResult): Promise<BriefInference> {
+  const response = await fetch(`${API_BASE_URL}/api/brief/infer`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    throw new Error(`Brief infer failed: ${response.status}`);
   }
   return response.json();
 }

@@ -4,11 +4,13 @@ from app.services.json_repository import JsonRepository
 from app.services.asr_service import AsrService
 from app.services.material_analyzer import MaterialAnalyzer
 from app.services.aigc_image import AigcImageClient
+from app.services.brief_inferer import BriefInferer
 from app.services.material_vlm import MaterialVlmClient
 from app.services.media_probe import MediaProbe
 from app.services.natural_edit_parser import NaturalEditParser
 from app.services.media_renderer import MediaRenderer
 from app.services.plan_generator import PlanGenerator
+from app.services.project_store import ProjectStore
 from app.services.report_service import ReportService
 from app.services.structure_analyzer import StructureAnalyzer
 from app.services.structure_role_classifier import StructureRoleClassifier
@@ -113,6 +115,17 @@ def build_natural_edit_parser() -> NaturalEditParser:
     )
 
 
+def build_brief_inferer() -> BriefInferer:
+    settings = get_settings()
+    return BriefInferer(
+        provider=settings.llm_provider,
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+        timeout_sec=settings.llm_timeout_sec,
+    )
+
+
 def build_media_renderer() -> MediaRenderer:
     settings = get_settings()
     return MediaRenderer(ffmpeg_bin=settings.ffmpeg_bin)
@@ -127,6 +140,10 @@ def build_aigc_image_client() -> AigcImageClient:
         model=settings.aigc_image_model,
         timeout_sec=settings.aigc_image_timeout_sec,
     )
+
+
+def build_project_store() -> ProjectStore:
+    return ProjectStore()
 
 
 def build_media_probe() -> MediaProbe:

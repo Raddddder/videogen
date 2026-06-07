@@ -205,6 +205,15 @@ class InterpretEditRequest(BaseModel):
     context: str = ""
 
 
+class BriefInference(BaseModel):
+    title: str
+    category: str = "product_talk"
+    selling_points: List[str] = Field(default_factory=list)
+    material_brief: str
+    confidence: float = 0.5
+    reason: str = ""
+
+
 class MaterialPipelineRequest(BaseModel):
     project_id: str = "case_real_001"
     sample_video_id: str = "sample_001"

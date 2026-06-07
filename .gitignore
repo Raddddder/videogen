@@ -18,5 +18,7 @@ frontend/node_modules/
 frontend/dist/
 outputs/*
 !outputs/.gitkeep
+data/*.sqlite3
+!data/.gitkeep
 public/structure-preview*.png
 public/structure-preview*.mp4
