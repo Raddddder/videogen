@@ -749,6 +749,7 @@ export function App() {
             sample={currentSample}
             totalDuration={totalSourceDuration}
             sampleUploading={sampleUploading}
+            onOpenMaterials={() => setActiveView("materials")}
             onPickSample={() => sampleInputRef.current?.click()}
           />
         )}
@@ -1649,12 +1650,14 @@ function AnalysisView({
   sample,
   totalDuration,
   sampleUploading,
+  onOpenMaterials,
   onPickSample,
 }: {
   data: PipelineResult;
   sample?: SamplePreview;
   totalDuration: number;
   sampleUploading: boolean;
+  onOpenMaterials: () => void;
   onPickSample: () => void;
 }) {
   const info = data.structure_dna.basic_info;
@@ -1672,9 +1675,14 @@ function AnalysisView({
       <Card bordered className="panel wide">
         <div className="material-head-row">
           <PanelTitle eyebrow="Workflow Role" title="样例分析在流程里的作用" />
-          <Button icon={<CloudUploadIcon />} loading={sampleUploading} theme="primary" onClick={onPickSample}>
-            {sampleUploading ? "解析样例中..." : "上传样例视频"}
-          </Button>
+          <div className="material-head-actions">
+            <Button icon={<CloudUploadIcon />} loading={sampleUploading} variant={slotCount ? "outline" : "base"} theme={slotCount ? "default" : "primary"} onClick={onPickSample}>
+              {sampleUploading ? "解析样例中..." : sample?.videoSrc ? "替换样例" : "上传样例视频"}
+            </Button>
+            <Button disabled={!slotCount} theme="primary" onClick={onOpenMaterials}>
+              {slotCount ? "下一步：素材匹配" : "上传解析后进入素材匹配"}
+            </Button>
+          </div>
         </div>
         <div className="analysis-role-grid">
           <section>
@@ -1698,6 +1706,9 @@ function AnalysisView({
           <div className="tag-row">
             {handoffTags.length ? handoffTags.map((tag) => <span key={tag}>{tag}</span>) : <span>等待 Structure DNA 输出</span>}
           </div>
+          <Button disabled={!slotCount} theme="primary" variant="outline" onClick={onOpenMaterials}>
+            {slotCount ? "用这些槽位去匹配素材" : "等待结构槽位生成"}
+          </Button>
         </div>
         {!slotCount && (
           <div className="analysis-empty-action">
