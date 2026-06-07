@@ -4,6 +4,12 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    _PIL_OK = True
+except ImportError:  # pragma: no cover
+    _PIL_OK = False
+
 from app.api.dependencies import (
     build_aigc_image_client,
     build_brief_inferer,
@@ -61,6 +67,14 @@ ALLOWED_MATERIAL_SUFFIXES = {
 }
 SUPPORTED_VARIANTS = {"balanced", "high_click", "high_conversion", "fast_pacing", "premium"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+_FONT_CANDIDATES = [
+    "C:/Windows/Fonts/msyh.ttc",
+    "C:/Windows/Fonts/simhei.ttf",
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+]
 
 
 @router.get("/health")
@@ -308,6 +322,68 @@ def _safe_path_part(value: str, fallback: str) -> str:
     return safe_value.strip("_") or fallback
 
 
+def _font(size: int):
+    if not _PIL_OK:
+        return None
+    for item in _FONT_CANDIDATES:
+        path = Path(item)
+        if path.exists():
+            return ImageFont.truetype(str(path), size)
+    return ImageFont.load_default()
+
+
+def _wrap_card_text(draw: Any, text: str, font: Any, max_width: int) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    for char in text:
+        probe = current + char
+        if char == "\n" or draw.textlength(probe, font=font) > max_width:
+            if current:
+                lines.append(current.strip())
+            current = "" if char == "\n" else char
+        else:
+            current = probe
+    if current.strip():
+        lines.append(current.strip())
+    return lines
+
+
+def _render_aigc_card(scene: str, label: str, out_path: Path) -> Optional[Path]:
+    if not _PIL_OK:
+        return None
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    width, height = 1080, 1920
+    img = Image.new("RGB", (width, height), "#f8fbff")
+    draw = ImageDraw.Draw(img)
+    title_font = _font(68)
+    body_font = _font(48)
+    small_font = _font(32)
+    if not title_font or not body_font or not small_font:
+        return None
+
+    for y in range(height):
+        blend = y / height
+        draw.line(
+            [(0, y), (width, y)],
+            fill=(int(241 + 10 * blend), int(248 - 8 * blend), int(255 - 18 * blend)),
+        )
+    draw.rounded_rectangle([72, 120, width - 72, height - 120], radius=44, fill="#ffffff", outline="#dbeafe", width=3)
+    draw.rounded_rectangle([110, 170, 390, 232], radius=31, fill="#dbeafe")
+    draw.text((140, 184), "AIGC 图文卡", font=small_font, fill="#1d4ed8")
+    draw.text((110, 300), label, font=title_font, fill="#0f172a")
+
+    y = 430
+    for line in _wrap_card_text(draw, scene, body_font, width - 220)[:9]:
+        draw.text((110, y), line, font=body_font, fill="#172033")
+        y += 72
+
+    draw.rounded_rectangle([110, height - 380, width - 110, height - 230], radius=28, fill="#ecfdf3")
+    draw.text((150, height - 342), "可用于 Remotion / 预览合成", font=small_font, fill="#047857")
+    draw.text((150, height - 292), "作为缺口槽位的临时画面素材", font=small_font, fill="#475467")
+    img.save(out_path)
+    return out_path
+
+
 def _split_form_list(value: str) -> list[str]:
     normalized = value.replace("，", ",").replace("\n", ",")
     return [item.strip() for item in normalized.split(",") if item.strip()]
@@ -533,16 +609,29 @@ def aigc_fill_gaps(
     payload: PipelineResult,
     aigc: AigcImageClient = Depends(build_aigc_image_client),
 ) -> PipelineResult:
-    """对缺口段(无匹配素材)用文生图生成补全画面，挂为新素材并标 supplemented。"""
+    """对缺口段生成可合成画面素材，挂为新素材并标 supplemented。"""
     project_id = _safe_path_part(payload.edit_plan.project_id, "case_001")
     aigc_dir = OUTPUTS_DIR / project_id / "aigc"
     materials = list(payload.material_library.materials)
+    material_index = {material.material_id: index for index, material in enumerate(materials)}
     filled = 0
     for item in payload.edit_plan.timeline:
-        if item.selected_material_id:
+        existing = materials[material_index[item.selected_material_id]] if item.selected_material_id in material_index else None
+        should_upgrade_copy_card = (
+            existing is not None
+            and existing.analysis_source == "aigc"
+            and existing.preview_url is None
+        )
+        if item.selected_material_id and not should_upgrade_copy_card:
             continue
         scene = f"{_AIGC_SCENE_LABELS.get(item.function, '')}，{item.script}".strip("，")
+        label = _AIGC_SCENE_LABELS.get(item.function, item.function)
         saved = aigc.generate(scene, aigc_dir / f"{item.target_segment_id}.png") if aigc.enabled else None
+        card_source = "image_generated"
+        if saved is None:
+            saved = _render_aigc_card(scene, label, aigc_dir / f"{item.target_segment_id}_remotion_card.png")
+            card_source = "remotion_card"
+
         if saved is not None:
             rel = saved.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
             material = Material(
@@ -552,17 +641,21 @@ def aigc_fill_gaps(
                 duration_sec=0.0,
                 aspect_ratio="9:16",
                 usable_ranges=[],
-                shot_type="aigc_generated",
+                shot_type=f"aigc_{card_source}",
                 semantic_role=item.function,
-                tags=["AIGC", _AIGC_SCENE_LABELS.get(item.function, item.function)],
+                tags=["AIGC", "image_card", "remotion_ready", label],
                 emotion_score=5.0,
-                quality_score=0.8,
+                quality_score=0.8 if card_source == "image_generated" else 0.72,
                 crop_risk="low",
-                transcript=item.script,
+                transcript=f"AIGC 画面补全：{scene}",
                 preview_url=f"/{rel}",
                 analysis_source="aigc",
             )
-            item.explanation = f"{item.function} 槽位已用 AIGC 生成画面补全。"
+            item.explanation = (
+                f"{item.function} 槽位已用 AIGC 生成画面补全。"
+                if card_source == "image_generated"
+                else f"{item.function} 槽位已用本地图文卡补全，可用于 Remotion 或预览合成。"
+            )
         else:
             material = Material(
                 material_id=f"aigc_{item.target_segment_id}",
@@ -582,7 +675,11 @@ def aigc_fill_gaps(
                 analysis_source="aigc",
             )
             item.explanation = f"{item.function} 槽位暂无图片生成配置，已降级为 AIGC 文案卡补全建议。"
-        materials.append(material)
+        if material.material_id in material_index:
+            materials[material_index[material.material_id]] = material
+        else:
+            material_index[material.material_id] = len(materials)
+            materials.append(material)
         item.selected_material_id = material.material_id
         item.slot_status = "supplemented"
         item.completion_strategy = "aigc"

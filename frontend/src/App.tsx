@@ -1804,7 +1804,7 @@ const materialSourceLabels: Record<NonNullable<Material["analysis_source"]>, str
   vlm: "AI 视觉识别",
   rule: "规则推断",
   mock: "示例数据",
-  aigc: "AIGC 补全",
+  aigc: "AIGC 图文补全",
 };
 
 function MaterialsView({
@@ -1863,7 +1863,7 @@ function MaterialsView({
               variant="outline"
               onClick={onFillGaps}
             >
-              {filling ? "AIGC 生成中..." : "AIGC 补全缺口"}
+              {filling ? "AIGC 图卡生成中..." : "AIGC 图卡补全"}
             </Button>
             <Button
               icon={<CloudUploadIcon />}
