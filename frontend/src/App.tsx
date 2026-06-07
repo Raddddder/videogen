@@ -215,7 +215,7 @@ const initialPipeline = buildEmptyPipeline(demoSessions[0]);
 export function App() {
   const [sessions, setSessions] = useState<DemoSession[]>(demoSessions);
   const [data, setData] = useState<PipelineResult>(initialPipeline);
-  const [activeView, setActiveView] = useState<ViewKey>("overview");
+  const [activeView, setActiveView] = useState<ViewKey>("analysis");
   const [activeSessionId, setActiveSessionId] = useState(demoSessions[0].id);
   const [sessionResults, setSessionResults] = useState<Record<string, PipelineResult>>({});
   const [uploadedSamples, setUploadedSamples] = useState<Record<string, SamplePreview>>({});
@@ -282,6 +282,7 @@ export function App() {
   const totalSourceDuration = data.structure_dna.total_duration_sec;
   const totalTargetDuration = getTimelineDuration(data.edit_plan.timeline);
   const hasAnalyzedPlan = data.edit_plan.timeline.length > 0;
+  const availableViewTabs = hasAnalyzedPlan ? viewTabs : viewTabs.filter((item) => item.key !== "overview");
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
   const currentSample = uploadedSamples[activeSessionId] ?? activeSession?.sample;
   const activeVariantConfig = variantConfigs.find((variant) => variant.id === activeVariant) ?? variantConfigs[0];
@@ -305,12 +306,13 @@ export function App() {
     if (snapshot) {
       setData(snapshot);
       setActiveSegmentId(snapshot.edit_plan.timeline[0]?.target_segment_id ?? "");
+      setActiveView(snapshot.edit_plan.timeline.length ? "overview" : "analysis");
     } else {
       const empty = buildEmptyPipeline(session);
       setData(empty);
       setActiveSegmentId("");
+      setActiveView("analysis");
     }
-    setActiveView("overview");
     setApiState(`${session.caseId} ready`);
   };
 
@@ -324,7 +326,7 @@ export function App() {
     setDraft(buildDraftFromSession(session));
     setData(buildEmptyPipeline(session));
     setActiveSegmentId("");
-    setActiveView("overview");
+    setActiveView("analysis");
     setApiState("新会话待上传分析");
   };
 
@@ -451,7 +453,7 @@ export function App() {
         };
       });
       setApiState("sample pipeline synced, inferring brief");
-      setActiveView("overview");
+      setActiveView("analysis");
       try {
         const inferred = await inferBrief(result);
         applyBriefInference(inferred, targetSessionId, result);
@@ -665,30 +667,54 @@ export function App() {
               <span>当前流程</span>
               <Select
                 className="flow-select"
-                options={viewTabs.map((item) => ({label: item.label, value: item.key}))}
+                options={availableViewTabs.map((item) => ({label: item.label, value: item.key}))}
                 value={activeView}
                 onChange={(value) => setActiveView(value as ViewKey)}
               />
             </div>
-            <div className="status-strip" aria-label="槽位状态统计">
-              {statusOrder.map((status) => (
-                <Tag key={status} shape="round" theme={statusThemes[status]} variant="light">
-                  {statusLabels[status]} {statusCounts[status]}
-                </Tag>
-              ))}
-            </div>
+            {hasAnalyzedPlan ? (
+              <div className="status-strip" aria-label="槽位状态统计">
+                {statusOrder.map((status) => (
+                  <Tag key={status} shape="round" theme={statusThemes[status]} variant="light">
+                    {statusLabels[status]} {statusCounts[status]}
+                  </Tag>
+                ))}
+              </div>
+            ) : (
+              <div className="start-state-strip" aria-label="开始状态">
+                <Tag shape="round" theme="primary" variant="light">等待样例视频</Tag>
+                <span>先上传样例，AI 会生成 Structure DNA，然后再进入素材匹配。</span>
+              </div>
+            )}
           </div>
 
-          <div className="workspace-metrics">
-            <Score label="结构一致" value={hasAnalyzedPlan ? data.edit_plan.overall_score.structure_consistency : null} />
-            <Score label="素材匹配" value={hasAnalyzedPlan ? data.edit_plan.overall_score.material_fit : null} />
-            <Score label="节奏匹配" value={hasAnalyzedPlan ? data.edit_plan.overall_score.pacing_fit : null} />
-            <div className="readiness-meter">
-              <span>演示可用度</span>
-              <strong>{hasAnalyzedPlan ? readiness : "待分析"}</strong>
-              <Progress color="#0f766e" label={false} percentage={hasAnalyzedPlan ? readiness : 0} size="small" theme="line" />
+          {hasAnalyzedPlan ? (
+            <div className="workspace-metrics">
+              <Score label="结构一致" value={data.edit_plan.overall_score.structure_consistency} />
+              <Score label="素材匹配" value={data.edit_plan.overall_score.material_fit} />
+              <Score label="节奏匹配" value={data.edit_plan.overall_score.pacing_fit} />
+              <div className="readiness-meter">
+                <span>演示可用度</span>
+                <strong>{readiness}</strong>
+                <Progress color="#0f766e" label={false} percentage={readiness} size="small" theme="line" />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="workspace-start-guide">
+              <section>
+                <b>1 上传样例</b>
+                <small>先让 AI 看懂模板视频</small>
+              </section>
+              <section>
+                <b>2 复核结构</b>
+                <small>确认 hook、痛点、铺垫、CTA 等槽位</small>
+              </section>
+              <section>
+                <b>3 匹配素材</b>
+                <small>再把你的素材放进对应槽位</small>
+              </section>
+            </div>
+          )}
         </header>
 
         {activeView === "overview" && (

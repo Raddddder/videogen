@@ -2693,6 +2693,60 @@ button {
   grid-column: auto;
 }
 
+.start-state-strip {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fbfcfe;
+}
+
+.start-state-strip span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-start-guide {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.workspace-start-guide section {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.workspace-start-guide b,
+.workspace-start-guide small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-start-guide b {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.workspace-start-guide small {
+  margin-top: 4px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
 /* ---- cards / panels ---- */
 .panel, .workflow-card, .workflow-runway-step, .acceptance-card, .gap-card, .material-card {
   border: 1px solid var(--line) !important;
@@ -3201,6 +3255,10 @@ button {
 
   .workspace-metrics .readiness-meter {
     grid-column: 1 / -1;
+  }
+
+  .workspace-start-guide {
+    grid-template-columns: 1fr;
   }
 
   .materials-workbench {
