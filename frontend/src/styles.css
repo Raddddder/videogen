@@ -2962,6 +2962,89 @@ button {
   white-space: nowrap;
 }
 
+/* Right workspace must own vertical scrolling; body/app shell stay fixed. */
+.app-shell {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.sidebar {
+  height: 100dvh;
+}
+
+.workspace {
+  height: 100dvh;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 36px;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 880px) {
+  body {
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .app-shell {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    display: flex;
+    height: 100dvh;
+    min-height: 0;
+    padding: 16px 12px;
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    overflow: hidden;
+  }
+
+  .workspace {
+    height: 100dvh;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 14px;
+  }
+
+  .sidebar .session-list {
+    display: grid;
+    grid-auto-flow: row;
+    grid-auto-rows: min-content;
+    grid-auto-columns: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .sidebar .session-card {
+    grid-template-columns: 46px minmax(0, 1fr);
+    min-height: 52px;
+  }
+
+  .sidebar .session-card small {
+    display: none;
+  }
+
+  .brand strong {
+    font-size: 14px;
+  }
+
+  .brand small {
+    font-size: 11px;
+  }
+}
+
 @media (max-width: 1180px) {
   .workspace-heading {
     flex-direction: column;
