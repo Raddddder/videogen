@@ -2,7 +2,7 @@ import {useEffect, useMemo, useRef, useState} from "react";
 import {Button, Card, Input, Progress, Radio, Select, Slider, Tag, Textarea} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
-import {assetUrl, compareVariants, fillGaps, getProject, inferBrief, interpretEdits, listProjects, regeneratePlan, renderPreview, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
+import {assetUrl, compareVariants, fillGaps, getProject, inferBrief, interpretEdits, listProjects, reanalyzeMaterial, regeneratePlan, renderPreview, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
 import type {BriefInference, VariantComparison} from "./api";
 import {demoSessions} from "./demoSessions";
 import type {DemoSession} from "./demoSessions";
@@ -526,6 +526,108 @@ export function App() {
     }
   };
 
+  const currentEdits = () => ({
+    hook_rewrite: draft.hookRewrite,
+    cta_text: draft.ctaText,
+    packaging_style: draft.packagingStyle,
+    pacing_intensity: draft.pacingIntensity,
+    selling_points: draft.sellingPoints.split(/[、，,]/).map((s) => s.trim()).filter(Boolean),
+  });
+
+  const collectLocked = (d: PipelineResult): Record<string, string> =>
+    Object.fromEntries(
+      d.edit_plan.timeline
+        .filter((i) => i.locked && i.selected_material_id)
+        .map((i) => [i.segment_id, i.selected_material_id as string]),
+    );
+
+  const applyAndRegenerate = async (next: PipelineResult, note: string) => {
+    setRegenerating(true);
+    setApiState(note);
+    try {
+      const result = await regeneratePlan(next, currentEdits(), activeVariant, undefined, collectLocked(next));
+      setData(result);
+      setSessionResults((cur) => ({...cur, [activeSessionId]: result}));
+      setApiState("方案已更新");
+    } catch (error) {
+      setApiState(error instanceof Error ? error.message : "更新失败");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const handleAssignMaterial = (segmentId: string, materialId: string) => {
+    const next = structuredClone(data) as PipelineResult;
+    const item = next.edit_plan.timeline.find((i) => i.segment_id === segmentId);
+    if (!item) {
+      return;
+    }
+    item.selected_material_id = materialId;
+    item.locked = true;
+    void applyAndRegenerate(next, "锁定素材并重排…");
+  };
+
+  const handleToggleLock = (segmentId: string) => {
+    const next = structuredClone(data) as PipelineResult;
+    const item = next.edit_plan.timeline.find((i) => i.segment_id === segmentId);
+    if (!item) {
+      return;
+    }
+    item.locked = !item.locked;
+    void applyAndRegenerate(next, item.locked ? "锁定槽位…" : "解锁并重排…");
+  };
+
+  const handleToggleDisable = (materialId: string) => {
+    const next = structuredClone(data) as PipelineResult;
+    const material = next.material_library.materials.find((m) => m.material_id === materialId);
+    if (!material) {
+      return;
+    }
+    material.disabled = !material.disabled;
+    void applyAndRegenerate(next, material.disabled ? "禁用素材并重排…" : "启用素材并重排…");
+  };
+
+  const handleDeleteMaterial = (materialId: string) => {
+    const next = structuredClone(data) as PipelineResult;
+    next.material_library.materials = next.material_library.materials.filter((m) => m.material_id !== materialId);
+    next.edit_plan.timeline.forEach((i) => {
+      if (i.selected_material_id === materialId) {
+        i.selected_material_id = null;
+        i.locked = false;
+      }
+    });
+    void applyAndRegenerate(next, "删除素材并重排…");
+  };
+
+  const handleReanalyzeMaterial = async (materialId: string) => {
+    const target = data.material_library.target;
+    const material = data.material_library.materials.find((m) => m.material_id === materialId);
+    if (!material) {
+      return;
+    }
+    setRegenerating(true);
+    setApiState("重新分析素材…");
+    try {
+      const updated = await reanalyzeMaterial(
+        material,
+        target ? {title: target.title, category: target.category, selling_points: target.selling_points} : undefined,
+      );
+      const next = structuredClone(data) as PipelineResult;
+      const idx = next.material_library.materials.findIndex((m) => m.material_id === materialId);
+      if (idx >= 0) {
+        next.material_library.materials[idx] = updated;
+      }
+      const result = await regeneratePlan(next, currentEdits(), activeVariant, undefined, collectLocked(next));
+      setData(result);
+      setSessionResults((cur) => ({...cur, [activeSessionId]: result}));
+      setApiState("素材已重新分析");
+    } catch (error) {
+      setApiState(error instanceof Error ? error.message : "重新分析失败");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   const handleFillGaps = async () => {
     setFilling(true);
     setApiState("AIGC 补全缺口中");
@@ -762,6 +864,12 @@ export function App() {
             onUploadMaterials={() => materialInputRef.current?.click()}
             onFillGaps={handleFillGaps}
             filling={filling}
+            busy={regenerating}
+            onAssignMaterial={handleAssignMaterial}
+            onToggleLock={handleToggleLock}
+            onToggleDisable={handleToggleDisable}
+            onDeleteMaterial={handleDeleteMaterial}
+            onReanalyze={handleReanalyzeMaterial}
           />
         )}
         {activeView === "plan" && (
@@ -1826,6 +1934,12 @@ function MaterialsView({
   onUploadMaterials,
   onFillGaps,
   filling,
+  busy,
+  onAssignMaterial,
+  onToggleLock,
+  onToggleDisable,
+  onDeleteMaterial,
+  onReanalyze,
 }: {
   data: PipelineResult;
   activeSegmentId: string;
@@ -1834,6 +1948,12 @@ function MaterialsView({
   onUploadMaterials: () => void;
   onFillGaps: () => void;
   filling: boolean;
+  busy: boolean;
+  onAssignMaterial: (segmentId: string, materialId: string) => void;
+  onToggleLock: (segmentId: string) => void;
+  onToggleDisable: (materialId: string) => void;
+  onDeleteMaterial: (materialId: string) => void;
+  onReanalyze: (materialId: string) => void;
 }) {
   const materialById = useMemo(
     () => new Map(data.material_library.materials.map((material) => [material.material_id, material])),
@@ -1900,10 +2020,11 @@ function MaterialsView({
             const preview = assetUrl(material.preview_url);
             const usedBy = data.edit_plan.timeline.filter((item) => item.selected_material_id === material.material_id);
             return (
-            <button
+            <div
               key={material.material_id}
-              className={`material-card material-card-button ${usedBy.length ? "is-used" : ""}`}
-              type="button"
+              className={`material-card material-card-button ${usedBy.length ? "is-used" : ""} ${material.disabled ? "is-disabled" : ""}`}
+              role="button"
+              tabIndex={0}
               onClick={() => {
                 const linked = usedBy[0];
                 if (linked) {
@@ -1947,7 +2068,18 @@ function MaterialsView({
                   <span key={tag}>{tag}</span>
                 ))}
               </div>
-            </button>
+              <div className="material-actions" onClick={(event) => event.stopPropagation()}>
+                <button type="button" disabled={busy} onClick={() => onToggleDisable(material.material_id)}>
+                  {material.disabled ? "启用" : "禁用"}
+                </button>
+                <button type="button" disabled={busy} onClick={() => onReanalyze(material.material_id)}>
+                  重新分析
+                </button>
+                <button type="button" disabled={busy} onClick={() => onDeleteMaterial(material.material_id)}>
+                  删除
+                </button>
+              </div>
+            </div>
             );
           })}
         </div>
@@ -2035,14 +2167,33 @@ function MaterialsView({
             </div>
           </div>
         )}
+        {activeTimelineItem && (
+          <div className="slot-control">
+            <Button
+              size="small"
+              variant={activeTimelineItem.locked ? "base" : "outline"}
+              theme={activeTimelineItem.locked ? "primary" : "default"}
+              disabled={busy}
+              onClick={() => onToggleLock(activeTimelineItem.segment_id)}
+            >
+              {activeTimelineItem.locked ? "🔒 已锁定（重生成不覆盖）" : "锁定此槽位"}
+            </Button>
+          </div>
+        )}
         <div className="candidate-list">
-          <b>候选素材</b>
+          <b>候选素材（点击指定到当前槽位）</b>
           {candidateMaterials.length === 0 && <small>当前槽位没有可直接替换素材，建议 AIGC 补全或重新上传素材。</small>}
           {candidateMaterials.map((material) => (
-            <section key={material.material_id}>
+            <button
+              key={material.material_id}
+              type="button"
+              className={`candidate-row ${activeTimelineItem?.selected_material_id === material.material_id ? "active" : ""}`}
+              disabled={busy || !activeTimelineItem}
+              onClick={() => activeTimelineItem && onAssignMaterial(activeTimelineItem.segment_id, material.material_id)}
+            >
               <span>{material.file_name}</span>
               <Progress color="#0f766e" label={false} percentage={Math.round(material.quality_score * 100)} size="small" theme="line" />
-            </section>
+            </button>
           ))}
         </div>
         <div className="gap-list compact">

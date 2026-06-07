@@ -94,10 +94,38 @@ class PlanGenerator:
             # 72 为基准节奏；强度越高，段落越短(节奏越快)。
             duration_factor *= max(0.6, min(1.4, (130 - edits.pacing_intensity) / 58))
 
+        locked_assignments = request.locked_assignments or {}
+        material_by_id = {material.material_id: material for material in materials.materials}
+
         for index, segment in enumerate(structure.segments, start=1):
             duration = round(max(segment.duration_sec * duration_factor, 1.0), 1)
             target_range = (round(cursor, 1), round(cursor + duration, 1))
             cursor = target_range[1]
+
+            locked_material_id = locked_assignments.get(segment.segment_id)
+            locked_material = material_by_id.get(locked_material_id) if locked_material_id else None
+            if locked_material is not None:
+                # 人工锁定：直接采用指定素材，跳过自动打分，重生成不覆盖。
+                used_counts[locked_material.material_id] = used_counts.get(locked_material.material_id, 0) + 1
+                timeline.append(
+                    TimelineItem(
+                        segment_id=segment.segment_id,
+                        target_segment_id=f"target_{index:03d}",
+                        function=segment.function,
+                        target_time_range=target_range,
+                        selected_material_id=locked_material.material_id,
+                        source_range=self._source_range(locked_material, duration),
+                        slot_status="supplemented",
+                        gap_reason="",
+                        completion_strategy="direct_match",
+                        supplement_instruction="人工锁定素材",
+                        script=self._script(segment, locked_material, materials, edits),
+                        packaging=self._packaging(segment, "supplemented", edits),
+                        explanation=f"人工锁定：该槽位指定使用 {locked_material.material_id}（{locked_material.file_name}），重新生成不会覆盖。",
+                        locked=True,
+                    )
+                )
+                continue
 
             candidate = self._select_candidate(segment, materials.materials, used_counts)
             status, strategy = self._status_and_strategy(segment, candidate)
@@ -135,7 +163,8 @@ class PlanGenerator:
         materials: Iterable[Material],
         used_counts: Dict[str, int],
     ) -> Optional[MatchCandidate]:
-        candidates = [self._score_material(segment, material, used_counts) for material in materials]
+        active_materials = [material for material in materials if not material.disabled]
+        candidates = [self._score_material(segment, material, used_counts) for material in active_materials]
         if not candidates:
             return None
         return max(candidates, key=lambda candidate: candidate.score)

@@ -86,6 +86,7 @@ export type Material = {
   key_visuals?: string[];
   preview_url?: string | null;
   analysis_source?: "mock" | "rule" | "vlm" | "aigc";
+  disabled?: boolean;
 };
 
 export type MaterialLibrary = {
@@ -118,6 +119,7 @@ export type TimelineItem = {
     effect?: string;
   };
   explanation: string;
+  locked?: boolean;
 };
 
 export type EditPlan = {

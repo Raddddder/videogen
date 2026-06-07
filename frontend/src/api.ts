@@ -1,4 +1,4 @@
-import type {EditPlan, MaterialLibrary, PipelineResult, StructureDNA} from "./types";
+import type {EditPlan, Material, MaterialLibrary, PipelineResult, StructureDNA} from "./types";
 
 export type VariantComparison = {
   variants: Array<{variant: string; edit_plan: EditPlan}>;
@@ -214,6 +214,7 @@ export async function regeneratePlan(
   edits: ManualEditsPayload,
   variant: string,
   instruction?: string,
+  lockedAssignments?: Record<string, string>,
 ): Promise<PipelineResult> {
   const response = await fetch(`${API_BASE_URL}/api/plans/regenerate`, {
     method: "POST",
@@ -226,11 +227,28 @@ export async function regeneratePlan(
       material_library: data.material_library,
       manual_edits: edits,
       instruction: instruction || null,
+      locked_assignments: lockedAssignments || null,
       use_mock: false,
     }),
   });
   if (!response.ok) {
     throw await apiError(response, "Regenerate failed");
+  }
+  return response.json();
+}
+
+/** 重新分析单个素材(重跑 ffprobe + VLM)，保留 material_id。 */
+export async function reanalyzeMaterial(
+  material: Material,
+  target?: {title?: string; category?: string; selling_points?: string[]},
+): Promise<Material> {
+  const response = await fetch(`${API_BASE_URL}/api/materials/reanalyze`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({material, target: target ?? {}}),
+  });
+  if (!response.ok) {
+    throw await apiError(response, "Reanalyze failed");
   }
   return response.json();
 }
