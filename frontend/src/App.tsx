@@ -746,6 +746,7 @@ export function App() {
         {activeView === "analysis" && (
           <AnalysisView
             data={data}
+            sample={currentSample}
             totalDuration={totalSourceDuration}
             sampleUploading={sampleUploading}
             onPickSample={() => sampleInputRef.current?.click()}
@@ -1645,11 +1646,13 @@ function VideoEditorPreview({
 
 function AnalysisView({
   data,
+  sample,
   totalDuration,
   sampleUploading,
   onPickSample,
 }: {
   data: PipelineResult;
+  sample?: SamplePreview;
   totalDuration: number;
   sampleUploading: boolean;
   onPickSample: () => void;
@@ -1658,6 +1661,11 @@ function AnalysisView({
   const slotCount = data.structure_dna.segments.length;
   const handoffTags = Array.from(new Set(data.structure_dna.segments.flatMap((segment) => segment.required_material_tags))).slice(0, 8);
   const slotCountCopy = slotCount ? `把视频拆成 ${slotCount} 个 Structure DNA 槽位，每个槽位都有时间轴和判断依据。` : "上传样例后，这里会生成可复核的 Structure DNA 槽位。";
+  const [editorTool, setEditorTool] = useState<EditorTool>("source_structure");
+  const [activeSourceSegmentId, setActiveSourceSegmentId] = useState("");
+  const firstSegment = data.structure_dna.segments[0];
+  const selectedSourceSegmentId = activeSourceSegmentId || firstSegment?.segment_id || "";
+  const sampleMeta = sample?.aspectRatio ?? (info ? `${info.width} x ${info.height}` : "等待导入");
 
   return (
     <div className="panel-grid">
@@ -1700,6 +1708,36 @@ function AnalysisView({
             </Button>
           </div>
         )}
+      </Card>
+
+      <Card bordered className="panel wide">
+        <div className="material-head-row">
+          <PanelTitle eyebrow="Imported Sample" title="导入样例预览" />
+          <Button loading={sampleUploading} size="small" variant="outline" onClick={onPickSample}>
+            {sample?.videoSrc ? "替换样例" : "导入样例"}
+          </Button>
+        </div>
+        <VideoEditorPreview
+          caption={firstSegment?.transcript ?? "导入样例后，这里会显示视频预览和结构轨。"}
+          currentTool={editorTool}
+          meta={sampleMeta}
+          onOpenPanel={() => undefined}
+          onSelectTool={setEditorTool}
+          onSelectTrack={setActiveSourceSegmentId}
+          onUseTool={setEditorTool}
+          title={sample?.fileName ?? data.structure_dna.video_id}
+          tools={sourceEditorTools}
+          tone="source"
+          tracks={data.structure_dna.segments.map((segment) => ({
+            id: segment.segment_id,
+            label: functionLabels[segment.function],
+            status: "matched",
+            selected: selectedSourceSegmentId === segment.segment_id,
+            detail: `${formatRange(segment.time_range)} / ${segment.transcript || segment.visual_cue || "结构槽位"}`,
+            weight: segment.duration_ratio ?? Math.max(segment.duration_sec, 0.8),
+          }))}
+          videoSrc={sample?.videoSrc}
+        />
       </Card>
 
       <Card bordered className="panel wide">
