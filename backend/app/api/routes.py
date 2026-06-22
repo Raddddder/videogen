@@ -35,6 +35,7 @@ from app.models.contracts import (
     InterpretEditRequest,
     ManualEdits,
     Material,
+    ReanalyzeMaterialRequest,
     MaterialLibrary,
     MaterialPipelineRequest,
     PipelineResult,
@@ -395,6 +396,31 @@ def analyze_materials(
     analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
 ) -> MaterialLibrary:
     return analyzer.analyze(request)
+
+
+@router.post("/api/materials/reanalyze", response_model=Material)
+def reanalyze_material(
+    request: ReanalyzeMaterialRequest,
+    analyzer: MaterialAnalyzer = Depends(build_material_analyzer),
+) -> Material:
+    """重新分析单个已上传素材(重跑 ffprobe + VLM)，保留原 material_id。"""
+    preview_url = request.material.preview_url
+    if not preview_url:
+        raise HTTPException(status_code=400, detail="material has no preview_url to reanalyze")
+    candidate = (PROJECT_ROOT / preview_url.lstrip("/")).resolve()
+    try:
+        if not candidate.is_relative_to(PROJECT_ROOT.resolve()) or not candidate.exists():
+            raise HTTPException(status_code=404, detail="material file not found")
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail="material file not found") from error
+    try:
+        library = analyzer.analyze_files("reanalyze", request.target, [candidate])
+    except MediaProbeDependencyError as error:
+        raise HTTPException(status_code=500, detail=f"FFmpeg dependency unavailable: {error}") from error
+    new_material = library.materials[0]
+    new_material.material_id = request.material.material_id
+    new_material.disabled = request.material.disabled
+    return new_material
 
 
 @router.post("/api/materials/upload", response_model=MaterialLibrary)

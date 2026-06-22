@@ -2,7 +2,7 @@ import {useEffect, useMemo, useRef, useState} from "react";
 import {Button, Card, Input, Progress, Radio, Select, Slider, Tag, Textarea} from "tdesign-react";
 import {CloudUploadIcon, PlayCircleIcon, RocketIcon} from "tdesign-icons-react";
 
-import {assetUrl, compareVariants, fillGaps, getProject, inferBrief, interpretEdits, listProjects, regeneratePlan, renderPreview, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
+import {assetUrl, compareVariants, fillGaps, getProject, inferBrief, interpretEdits, listProjects, reanalyzeMaterial, regeneratePlan, renderPreview, runDemoPipeline, uploadMaterials, uploadSamplePipeline} from "./api";
 import type {BriefInference, VariantComparison} from "./api";
 import {demoSessions} from "./demoSessions";
 import type {DemoSession} from "./demoSessions";
@@ -326,7 +326,7 @@ export function App() {
     setDraft(buildDraftFromSession(session));
     setData(buildEmptyPipeline(session));
     setActiveSegmentId("");
-    setActiveView("analysis");
+    setActiveView("overview");
     setApiState("新会话待上传分析");
   };
 
@@ -521,6 +521,108 @@ export function App() {
       setApiState("plan regenerated");
     } catch (error) {
       setApiState(error instanceof Error ? error.message : "regenerate failed");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const currentEdits = () => ({
+    hook_rewrite: draft.hookRewrite,
+    cta_text: draft.ctaText,
+    packaging_style: draft.packagingStyle,
+    pacing_intensity: draft.pacingIntensity,
+    selling_points: draft.sellingPoints.split(/[、，,]/).map((s) => s.trim()).filter(Boolean),
+  });
+
+  const collectLocked = (d: PipelineResult): Record<string, string> =>
+    Object.fromEntries(
+      d.edit_plan.timeline
+        .filter((i) => i.locked && i.selected_material_id)
+        .map((i) => [i.segment_id, i.selected_material_id as string]),
+    );
+
+  const applyAndRegenerate = async (next: PipelineResult, note: string) => {
+    setRegenerating(true);
+    setApiState(note);
+    try {
+      const result = await regeneratePlan(next, currentEdits(), activeVariant, undefined, collectLocked(next));
+      setData(result);
+      setSessionResults((cur) => ({...cur, [activeSessionId]: result}));
+      setApiState("方案已更新");
+    } catch (error) {
+      setApiState(error instanceof Error ? error.message : "更新失败");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const handleAssignMaterial = (segmentId: string, materialId: string) => {
+    const next = structuredClone(data) as PipelineResult;
+    const item = next.edit_plan.timeline.find((i) => i.segment_id === segmentId);
+    if (!item) {
+      return;
+    }
+    item.selected_material_id = materialId;
+    item.locked = true;
+    void applyAndRegenerate(next, "锁定素材并重排…");
+  };
+
+  const handleToggleLock = (segmentId: string) => {
+    const next = structuredClone(data) as PipelineResult;
+    const item = next.edit_plan.timeline.find((i) => i.segment_id === segmentId);
+    if (!item) {
+      return;
+    }
+    item.locked = !item.locked;
+    void applyAndRegenerate(next, item.locked ? "锁定槽位…" : "解锁并重排…");
+  };
+
+  const handleToggleDisable = (materialId: string) => {
+    const next = structuredClone(data) as PipelineResult;
+    const material = next.material_library.materials.find((m) => m.material_id === materialId);
+    if (!material) {
+      return;
+    }
+    material.disabled = !material.disabled;
+    void applyAndRegenerate(next, material.disabled ? "禁用素材并重排…" : "启用素材并重排…");
+  };
+
+  const handleDeleteMaterial = (materialId: string) => {
+    const next = structuredClone(data) as PipelineResult;
+    next.material_library.materials = next.material_library.materials.filter((m) => m.material_id !== materialId);
+    next.edit_plan.timeline.forEach((i) => {
+      if (i.selected_material_id === materialId) {
+        i.selected_material_id = null;
+        i.locked = false;
+      }
+    });
+    void applyAndRegenerate(next, "删除素材并重排…");
+  };
+
+  const handleReanalyzeMaterial = async (materialId: string) => {
+    const target = data.material_library.target;
+    const material = data.material_library.materials.find((m) => m.material_id === materialId);
+    if (!material) {
+      return;
+    }
+    setRegenerating(true);
+    setApiState("重新分析素材…");
+    try {
+      const updated = await reanalyzeMaterial(
+        material,
+        target ? {title: target.title, category: target.category, selling_points: target.selling_points} : undefined,
+      );
+      const next = structuredClone(data) as PipelineResult;
+      const idx = next.material_library.materials.findIndex((m) => m.material_id === materialId);
+      if (idx >= 0) {
+        next.material_library.materials[idx] = updated;
+      }
+      const result = await regeneratePlan(next, currentEdits(), activeVariant, undefined, collectLocked(next));
+      setData(result);
+      setSessionResults((cur) => ({...cur, [activeSessionId]: result}));
+      setApiState("素材已重新分析");
+    } catch (error) {
+      setApiState(error instanceof Error ? error.message : "重新分析失败");
     } finally {
       setRegenerating(false);
     }
@@ -762,6 +864,12 @@ export function App() {
             onUploadMaterials={() => materialInputRef.current?.click()}
             onFillGaps={handleFillGaps}
             filling={filling}
+            busy={regenerating}
+            onAssignMaterial={handleAssignMaterial}
+            onToggleLock={handleToggleLock}
+            onToggleDisable={handleToggleDisable}
+            onDeleteMaterial={handleDeleteMaterial}
+            onReanalyze={handleReanalyzeMaterial}
           />
         )}
         {activeView === "plan" && (
@@ -893,6 +1001,13 @@ function OverviewFlowView({
 
   return (
     <div className="panel-grid overview-flow-grid">
+      <WizardStrip
+        data={data}
+        sampleUploading={sampleUploading}
+        onPickSample={onPickSample}
+        onOpenMaterials={onOpenMaterials}
+        onOpenPlan={onOpenPlan}
+      />
       <Card bordered className="panel wide">
         <div className="material-head-row">
           <PanelTitle eyebrow="Overview" title="会话总览" />
@@ -1026,6 +1141,52 @@ function OverviewFlowView({
         </div>
       </Card>
     </div>
+  );
+}
+
+function WizardStrip({
+  data,
+  sampleUploading,
+  onPickSample,
+  onOpenMaterials,
+  onOpenPlan,
+}: {
+  data: PipelineResult;
+  sampleUploading: boolean;
+  onPickSample: () => void;
+  onOpenMaterials: () => void;
+  onOpenPlan: () => void;
+}) {
+  const hasStructure = data.structure_dna.segments.length > 0;
+  const hasMaterials = data.material_library.materials.length > 0;
+  const hasPlan = data.edit_plan.timeline.length > 0;
+  const steps = [
+    {n: 1, label: "上传样例视频", hint: "AI 拆解爆款结构", done: hasStructure, action: onPickSample, cta: sampleUploading ? "解析中…" : "上传样例"},
+    {n: 2, label: "上传我的素材", hint: "视频 / 图片 / 文案", done: hasMaterials, action: onOpenMaterials, cta: "去上传素材"},
+    {n: 3, label: "生成迁移方案", hint: "结构迁移 + 缺口补全", done: hasPlan, action: onOpenPlan, cta: "查看方案"},
+    {n: 4, label: "导出成片", hint: "9:16 带字幕 mp4", done: false, action: onOpenPlan, cta: "去导出"},
+  ];
+  const currentIndex = steps.findIndex((step) => !step.done);
+  return (
+    <section className="wizard-strip" aria-label="0 到 1 引导流程">
+      {steps.map((step, index) => {
+        const state = step.done ? "done" : index === currentIndex ? "current" : "todo";
+        return (
+          <div key={step.n} className={`wizard-step ${state}`}>
+            <span className="wizard-index">{step.done ? "✓" : step.n}</span>
+            <div className="wizard-text">
+              <b>{step.label}</b>
+              <small>{step.hint}</small>
+            </div>
+            {state === "current" && (
+              <Button size="small" theme="primary" loading={step.n === 1 && sampleUploading} onClick={step.action}>
+                {step.cta}
+              </Button>
+            )}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
@@ -1826,6 +1987,12 @@ function MaterialsView({
   onUploadMaterials,
   onFillGaps,
   filling,
+  busy,
+  onAssignMaterial,
+  onToggleLock,
+  onToggleDisable,
+  onDeleteMaterial,
+  onReanalyze,
 }: {
   data: PipelineResult;
   activeSegmentId: string;
@@ -1834,6 +2001,12 @@ function MaterialsView({
   onUploadMaterials: () => void;
   onFillGaps: () => void;
   filling: boolean;
+  busy: boolean;
+  onAssignMaterial: (segmentId: string, materialId: string) => void;
+  onToggleLock: (segmentId: string) => void;
+  onToggleDisable: (materialId: string) => void;
+  onDeleteMaterial: (materialId: string) => void;
+  onReanalyze: (materialId: string) => void;
 }) {
   const materialById = useMemo(
     () => new Map(data.material_library.materials.map((material) => [material.material_id, material])),
@@ -1900,10 +2073,11 @@ function MaterialsView({
             const preview = assetUrl(material.preview_url);
             const usedBy = data.edit_plan.timeline.filter((item) => item.selected_material_id === material.material_id);
             return (
-            <button
+            <div
               key={material.material_id}
-              className={`material-card material-card-button ${usedBy.length ? "is-used" : ""}`}
-              type="button"
+              className={`material-card material-card-button ${usedBy.length ? "is-used" : ""} ${material.disabled ? "is-disabled" : ""}`}
+              role="button"
+              tabIndex={0}
               onClick={() => {
                 const linked = usedBy[0];
                 if (linked) {
@@ -1947,7 +2121,18 @@ function MaterialsView({
                   <span key={tag}>{tag}</span>
                 ))}
               </div>
-            </button>
+              <div className="material-actions" onClick={(event) => event.stopPropagation()}>
+                <button type="button" disabled={busy} onClick={() => onToggleDisable(material.material_id)}>
+                  {material.disabled ? "启用" : "禁用"}
+                </button>
+                <button type="button" disabled={busy} onClick={() => onReanalyze(material.material_id)}>
+                  重新分析
+                </button>
+                <button type="button" disabled={busy} onClick={() => onDeleteMaterial(material.material_id)}>
+                  删除
+                </button>
+              </div>
+            </div>
             );
           })}
         </div>
@@ -2035,14 +2220,33 @@ function MaterialsView({
             </div>
           </div>
         )}
+        {activeTimelineItem && (
+          <div className="slot-control">
+            <Button
+              size="small"
+              variant={activeTimelineItem.locked ? "base" : "outline"}
+              theme={activeTimelineItem.locked ? "primary" : "default"}
+              disabled={busy}
+              onClick={() => onToggleLock(activeTimelineItem.segment_id)}
+            >
+              {activeTimelineItem.locked ? "🔒 已锁定（重生成不覆盖）" : "锁定此槽位"}
+            </Button>
+          </div>
+        )}
         <div className="candidate-list">
-          <b>候选素材</b>
+          <b>候选素材（点击指定到当前槽位）</b>
           {candidateMaterials.length === 0 && <small>当前槽位没有可直接替换素材，建议 AIGC 补全或重新上传素材。</small>}
           {candidateMaterials.map((material) => (
-            <section key={material.material_id}>
+            <button
+              key={material.material_id}
+              type="button"
+              className={`candidate-row ${activeTimelineItem?.selected_material_id === material.material_id ? "active" : ""}`}
+              disabled={busy || !activeTimelineItem}
+              onClick={() => activeTimelineItem && onAssignMaterial(activeTimelineItem.segment_id, material.material_id)}
+            >
               <span>{material.file_name}</span>
               <Progress color="#0f766e" label={false} percentage={Math.round(material.quality_score * 100)} size="small" theme="line" />
-            </section>
+            </button>
           ))}
         </div>
         <div className="gap-list compact">

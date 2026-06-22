@@ -101,6 +101,7 @@ class Material(BaseModel):
     key_visuals: List[str] = Field(default_factory=list)
     preview_url: Optional[str] = None
     analysis_source: Literal["mock", "rule", "vlm", "aigc"] = "rule"
+    disabled: bool = False  # 人工禁用：匹配时跳过该素材
 
 
 class MaterialLibrary(BaseModel):
@@ -137,6 +138,7 @@ class TimelineItem(BaseModel):
     script: str
     packaging: TimelinePackaging
     explanation: str
+    locked: bool = False  # 人工锁定：重生成时保留该槽位的素材选择
 
 
 class MissingSlot(BaseModel):
@@ -197,12 +199,18 @@ class GeneratePlanRequest(BaseModel):
     material_library: Optional[MaterialLibrary] = None
     manual_edits: Optional[ManualEdits] = None
     instruction: Optional[str] = None  # 自然语言改片指令，由 LLM 解析成 manual_edits
+    locked_assignments: Optional[Dict[str, str]] = None  # segment_id -> material_id，重生成时锁定不覆盖
     use_mock: bool = True
 
 
 class InterpretEditRequest(BaseModel):
     instruction: str
     context: str = ""
+
+
+class ReanalyzeMaterialRequest(BaseModel):
+    material: Material
+    target: TargetBrief = Field(default_factory=TargetBrief)
 
 
 class BriefInference(BaseModel):
